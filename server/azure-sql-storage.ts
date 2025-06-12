@@ -19,20 +19,40 @@ interface AzureJobPosting {
 }
 
 function parseJdbcConnectionString(jdbcUrl: string) {
-  const url = new URL(jdbcUrl.replace('jdbc:sqlserver://', 'https://'));
-  const params = new URLSearchParams(url.search);
+  // Parse JDBC connection string properly
+  const parts = jdbcUrl.split(';');
+  const serverPart = parts[0].replace('jdbc:sqlserver://', '');
+  const [server, port] = serverPart.split(':');
   
-  return {
-    server: url.hostname,
-    port: url.port ? parseInt(url.port) : 1433,
-    database: params.get('databaseName') || 'master',
-    user: params.get('user') || '',
-    password: params.get('password') || '',
+  const config: any = {
+    server: server,
+    port: port ? parseInt(port) : 1433,
+    database: 'master',
+    user: '',
+    password: '',
     options: {
       encrypt: true,
       trustServerCertificate: false,
     },
   };
+  
+  // Parse other parameters
+  for (let i = 1; i < parts.length; i++) {
+    const [key, value] = parts[i].split('=');
+    switch (key.toLowerCase()) {
+      case 'database':
+        config.database = value;
+        break;
+      case 'user':
+        config.user = value;
+        break;
+      case 'password':
+        config.password = value;
+        break;
+    }
+  }
+  
+  return config;
 }
 
 let globalPool: sql.ConnectionPool | null = null;
