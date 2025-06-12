@@ -105,68 +105,57 @@ export class SQLStorage implements IStorage {
     const pool = await this.getPool();
     const request = pool.request();
     
-    // Map the job object properties to match the database schema
-    request.input('jobID', sql.VarChar, job.jobID);
-    request.input('title', sql.VarChar, job.title);
-    request.input('description', sql.VarChar, job.description);
-    request.input('full_text', sql.VarChar, job.full_text);
-    request.input('url', sql.VarChar, job.url);
-    request.input('company_name', sql.VarChar, job.company_name);
-    request.input('brand', sql.VarChar, job.brand);
-    request.input('functional_area', sql.VarChar, job.functional_area);
-    request.input('work_type', sql.VarChar, job.work_type);
-    request.input('location_city', sql.VarChar, job.location_city);
-    request.input('location_state', sql.VarChar, job.location_state);
-    request.input('state_abbrev', sql.VarChar, job.state_abbrev);
-    request.input('zip_code', sql.VarChar, job.zip_code);
-    request.input('country', sql.VarChar, job.country);
-    request.input('latitude', sql.Decimal(10, 8), job.latitude ? parseFloat(job.latitude) : null);
-    request.input('longitude', sql.Decimal(11, 8), job.longitude ? parseFloat(job.longitude) : null);
+    // Ensure jobID is properly formatted as varchar string
+    const jobIdString = String(job.jobID);
+    console.log(`🔧 Inserting job with ID: "${jobIdString}" (type: ${typeof jobIdString})`);
     
-    // Create geography point if coordinates are available
-    const lat = job.latitude ? parseFloat(job.latitude) : null;
-    const lng = job.longitude ? parseFloat(job.longitude) : null;
-    const hasValidCoords = lat !== null && lng !== null && lat !== 0 && lng !== 0;
-    request.input('job_details_json', sql.VarChar, job.job_details_json);
-    request.input('status', sql.VarChar, job.status || 'Active');
+    // Map the job object properties to match the database schema
+    request.input('jobID', sql.VarChar(50), jobIdString);
+    request.input('title', sql.VarChar(500), job.title || '');
+    request.input('description', sql.Text, job.description);
+    request.input('full_text', sql.Text, job.full_text);
+    request.input('url', sql.VarChar(1000), job.url);
+    request.input('company_name', sql.VarChar(200), job.company_name);
+    request.input('brand', sql.VarChar(200), job.brand);
+    request.input('functional_area', sql.VarChar(200), job.functional_area);
+    request.input('work_type', sql.VarChar(100), job.work_type);
+    request.input('location_city', sql.VarChar(100), job.location_city);
+    request.input('location_state', sql.VarChar(100), job.location_state);
+    request.input('state_abbrev', sql.VarChar(10), job.state_abbrev);
+    request.input('zip_code', sql.VarChar(20), job.zip_code);
+    request.input('country', sql.VarChar(100), job.country);
+    
+    // Handle coordinates with proper decimal conversion
+    const lat = job.latitude ? parseFloat(String(job.latitude)) : null;
+    const lng = job.longitude ? parseFloat(String(job.longitude)) : null;
+    const hasValidCoords = lat !== null && lng !== null && lat !== 0 && lng !== 0 && !isNaN(lat) && !isNaN(lng);
+    
+    request.input('latitude', sql.Decimal(10, 8), lat);
+    request.input('longitude', sql.Decimal(11, 8), lng);
+    request.input('job_details_json', sql.Text, job.job_details_json);
+    request.input('status', sql.VarChar(50), job.status || 'Active');
     request.input('is_expired', sql.Bit, job.is_expired || false);
     request.input('lastDayToApply', sql.DateTime, job.lastDayToApply);
-    request.input('businessArea', sql.VarChar, job.businessArea);
+    request.input('businessArea', sql.VarChar(200), job.businessArea);
     
-    let insertQuery;
-    if (hasValidCoords) {
-      // Use native geography data type for proper geospatial support
-      insertQuery = `
-        INSERT INTO job_postings (
-          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
-          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude,
-          location_point, job_details_json, status, is_expired, lastDayToApply, businessArea
-        )
-        OUTPUT INSERTED.*
-        VALUES (
-          @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
-          @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude,
-          geography::Point(@latitude, @longitude, 4326), @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
-        )
-      `;
-    } else {
-      // Insert without geography point for invalid coordinates
-      insertQuery = `
-        INSERT INTO job_postings (
-          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
-          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude,
-          job_details_json, status, is_expired, lastDayToApply, businessArea
-        )
-        OUTPUT INSERTED.*
-        VALUES (
-          @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
-          @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude,
-          @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
-        )
-      `;
-    }
+    // Use a simplified insert that works with existing table structure
+    const insertQuery = `
+      INSERT INTO job_postings (
+        jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
+        location_city, location_state, state_abbrev, zip_code, country, latitude, longitude,
+        job_details_json, status, is_expired, lastDayToApply, businessArea
+      )
+      OUTPUT INSERTED.*
+      VALUES (
+        @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
+        @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude,
+        @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
+      )
+    `;
     
+    console.log(`📊 Executing SQL insert for job ${jobIdString}`);
     const result = await request.query(insertQuery);
+    console.log(`✅ Successfully inserted job ${jobIdString} into database`);
     return result.recordset[0];
   }
   

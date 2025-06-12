@@ -177,7 +177,9 @@ export class PipelineService {
         progress: 80 
       });
 
+      console.log('🔧 About to call synchronizeDatabase with', enrichedJobs.length, 'enriched jobs');
       const { newJobs, removedJobs } = await this.synchronizeDatabase(enrichedJobs);
+      console.log('🔧 synchronizeDatabase returned:', { newJobs, removedJobs });
 
       await storage.updatePipelineExecution(execution.id, {
         status: 'completed',
