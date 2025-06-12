@@ -437,18 +437,24 @@ Use the job context and URL to determine the most accurate location.`;
 
   private async getCoordinates(location: AILocationResponse): Promise<{ latitude: string; longitude: string; zipcode: string }> {
     // Try multiple address formats to improve geocoding accuracy
-    const addressFormats = [
+    const addressFormats: string[] = [
       // Most specific first
       [location.city, location.state, location.country].filter(Boolean).join(', '),
-      // Add "USA" if country is United States
-      location.country === 'United States' ? 
-        [location.city, location.state, 'USA'].filter(Boolean).join(', ') : null,
-      // Try with state abbreviation if we have full state name
-      location.state && location.country === 'United States' ? 
-        [location.city, this.getStateAbbreviation(location.state), 'USA'].filter(Boolean).join(', ') : null,
-    ].filter(Boolean);
+    ];
+    
+    // Add "USA" if country is United States
+    if (location.country === 'United States') {
+      addressFormats.push([location.city, location.state, 'USA'].filter(Boolean).join(', '));
+    }
+    
+    // Try with state abbreviation if we have full state name
+    if (location.state && location.country === 'United States') {
+      addressFormats.push([location.city, this.getStateAbbreviation(location.state), 'USA'].filter(Boolean).join(', '));
+    }
 
     for (const address of addressFormats) {
+      if (!address) continue;
+      
       try {
         const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_GEOCODING_API_KEY}`;
         
@@ -469,8 +475,13 @@ Use the job context and URL to determine the most accurate location.`;
             component => component.types.includes('postal_code')
           );
 
-          // Log the result for debugging
-          const zipcode = postalCode?.long_name || '';
+          let zipcode = postalCode?.long_name || '';
+          
+          // If no zipcode found, try to find any zipcode in this city area
+          if (!zipcode && location.city && location.state && location.country === 'United States') {
+            zipcode = await this.findCityZipcode(location.city, location.state);
+          }
+
           console.log(`🎯 Geocoding success for "${address}": lat=${locationData.lat}, lng=${locationData.lng}, zip=${zipcode || 'none'}`);
           
           return {
@@ -489,6 +500,51 @@ Use the job context and URL to determine the most accurate location.`;
     // If all attempts failed
     console.warn(`⚠️ All geocoding attempts failed for location: ${location.city}, ${location.state}, ${location.country}`);
     return { latitude: '', longitude: '', zipcode: '' };
+  }
+
+  private async findCityZipcode(city: string, state: string): Promise<string> {
+    try {
+      // Try searching for postal codes in the city area
+      const searchQueries = [
+        `${city} ${state} postal code`,
+        `${city} ${this.getStateAbbreviation(state)} zipcode`,
+        `downtown ${city} ${this.getStateAbbreviation(state)}`,
+        `${city} city center ${this.getStateAbbreviation(state)}`
+      ];
+
+      for (const query of searchQueries) {
+        try {
+          const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${process.env.GOOGLE_GEOCODING_API_KEY}`;
+          const response = await fetch(url);
+          
+          if (!response.ok) continue;
+          
+          const result: GeocodingResponse = await response.json();
+          
+          if (result.status === 'OK' && result.results.length > 0) {
+            // Look through all results for one with a postal code
+            for (const geoResult of result.results) {
+              const postalCode = geoResult.address_components.find(
+                component => component.types.includes('postal_code')
+              );
+              
+              if (postalCode?.long_name) {
+                console.log(`📮 Found fallback zipcode for ${city}, ${state}: ${postalCode.long_name} (via "${query}")`);
+                return postalCode.long_name;
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`Error in zipcode fallback search for "${query}":`, error);
+        }
+      }
+      
+      console.warn(`📭 No zipcode found for ${city}, ${state} after fallback attempts`);
+      return '';
+    } catch (error) {
+      console.warn(`Error in findCityZipcode for ${city}, ${state}:`, error);
+      return '';
+    }
   }
 
   private async synchronizeDatabase(enrichedJobs: any[]): Promise<{ newJobs: number; removedJobs: number }> {
