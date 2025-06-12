@@ -124,7 +124,7 @@ export class PipelineService {
           };
           
           console.log('🔍 Enriched Job Structure:', JSON.stringify({
-            jobID: job.data.jobID,
+            jobID: String(job.data.jobID),
             originalCity: job.data.city,
             aiCity: aiResult.city,
             aiState: aiResult.state,
@@ -494,7 +494,7 @@ REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
         }),
         status: "Active",
         is_expired: false,
-        jobID: job.data.jobID,
+        jobID: String(job.data.jobID),
         lastDayToApply: job.data.lastDayToApply ? new Date(job.data.lastDayToApply) : null,
         businessArea: job.data.businessArea,
       };
