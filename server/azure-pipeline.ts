@@ -509,48 +509,22 @@ Use the job context and URL to determine the most accurate location.`;
 
   private async lookupZipcodeFromDatabase(city: string, state: string): Promise<string> {
     try {
-      const { AzureSQLStorage } = await import('./azure-sql-storage.js');
-      const storage = new AzureSQLStorage();
+      const { zipcodeLookup } = await import('./zipcode-lookup.js');
       
-      // Get the SQL pool connection
-      const pool = await (storage as any).getPool();
+      // Ensure zipcode data is loaded
+      await zipcodeLookup.loadZipcodes();
       
-      // First try exact city match with state abbreviation
-      const stateAbbrev = this.getStateAbbreviation(state);
-      let result = await pool.request()
-        .input('city', city)
-        .input('state', stateAbbrev)
-        .query(`
-          SELECT TOP 1 postal_code 
-          FROM us_zipcodes 
-          WHERE LOWER(city) = LOWER(@city) AND state_abbrev = @state
-        `);
+      // Lookup zipcode from in-memory database
+      const zipcode = zipcodeLookup.lookupZipcode(city, state);
       
-      if (result.recordset.length > 0) {
-        const zipcode = result.recordset[0].postal_code;
-        console.log(`📋 Found zipcode from database: ${city}, ${stateAbbrev} → ${zipcode}`);
-        return zipcode;
-      }
-      
-      // Try with full state name
-      result = await pool.request()
-        .input('city', city)
-        .input('state', state)
-        .query(`
-          SELECT TOP 1 postal_code 
-          FROM us_zipcodes 
-          WHERE LOWER(city) = LOWER(@city) AND LOWER(state) = LOWER(@state)
-        `);
-      
-      if (result.recordset.length > 0) {
-        const zipcode = result.recordset[0].postal_code;
-        console.log(`📋 Found zipcode from database: ${city}, ${state} → ${zipcode}`);
+      if (zipcode) {
+        console.log(`📋 Found zipcode from lookup: ${city}, ${state} → ${zipcode}`);
         return zipcode;
       }
       
       return '';
     } catch (error) {
-      console.warn(`Database zipcode lookup failed for ${city}, ${state}:`, error);
+      console.warn(`Zipcode lookup failed for ${city}, ${state}:`, error);
       return '';
     }
   }
