@@ -443,6 +443,8 @@ REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
     const newJobIDs = new Set(enrichedJobs.map(job => String(job.data.jobID)));
     console.log('Existing job IDs count:', existingJobIDs.size);
     console.log('New job IDs count:', newJobIDs.size);
+    console.log('🔍 Existing job IDs:', Array.from(existingJobIDs));
+    console.log('🔍 New job IDs:', Array.from(newJobIDs));
 
     // Find jobs to remove (in database but not in new data)
     const jobsToRemove = existingJobs.filter(job => job.jobID && !newJobIDs.has(String(job.jobID)));
