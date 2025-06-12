@@ -1,5 +1,5 @@
 import XLSX from 'xlsx';
-import * as sql from 'mssql';
+import sql from 'mssql';
 
 interface ZipcodeRecord {
   postal_code: string;
@@ -11,26 +11,46 @@ interface ZipcodeRecord {
 }
 
 function parseJdbcConnectionString(jdbcUrl: string) {
-  const match = jdbcUrl.match(/jdbc:sqlserver:\/\/([^:]+):(\d+);database=([^;]+);user=([^;]+);password=([^;]+)/);
-  if (!match) throw new Error('Invalid JDBC URL format');
+  // Parse JDBC connection string properly
+  const parts = jdbcUrl.split(';');
+  const serverPart = parts[0].replace('jdbc:sqlserver://', '');
+  const [server, port] = serverPart.split(':');
   
-  return {
-    server: match[1],
-    port: parseInt(match[2]),
-    database: match[3],
-    user: match[4],
-    password: match[5],
+  const config: any = {
+    server: server,
+    port: port ? parseInt(port) : 1433,
     options: {
       encrypt: true,
       trustServerCertificate: true
     }
   };
+  
+  // Parse additional connection parameters
+  for (let i = 1; i < parts.length; i++) {
+    const [key, value] = parts[i].split('=');
+    if (key && value) {
+      switch (key.toLowerCase()) {
+        case 'database':
+          config.database = value;
+          break;
+        case 'user':
+          config.user = value;
+          break;
+        case 'password':
+          config.password = value;
+          break;
+      }
+    }
+  }
+  
+  return config;
 }
 
 async function createZipcodeTable() {
   try {
-    // Connect to Azure SQL
-    const config = parseJdbcConnectionString(process.env.DATABASE_URL!);
+    // Use Azure SQL URL if available, otherwise DATABASE_URL
+    const azureUrl = process.env.AZURE_SQL_URL || process.env.DATABASE_URL!;
+    const config = parseJdbcConnectionString(azureUrl);
     const pool = await sql.connect(config);
     
     console.log('✅ Connected to Azure SQL Database');
