@@ -11,6 +11,7 @@ export const jobPostingListings = pgTable("job_posting_listings", {
   city: text("city"),
   state: text("state"),
   country: text("country"),
+  zipcode: text("zipcode"),
   latitude: decimal("latitude", { precision: 10, scale: 8 }),
   longitude: decimal("longitude", { precision: 11, scale: 8 }),
   locationPoint: text("location_point"), // For geospatial data

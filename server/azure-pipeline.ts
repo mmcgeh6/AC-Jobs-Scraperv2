@@ -36,6 +36,11 @@ interface GeocodingResponse {
         lng: number;
       };
     };
+    address_components: Array<{
+      long_name: string;
+      short_name: string;
+      types: string[];
+    }>;
   }>;
   status: string;
 }
@@ -182,6 +187,7 @@ export class AzurePipelineService {
               city: aiLocation.city,
               state: aiLocation.state,
               country: aiLocation.country,
+              zipcode: coordinates.zipcode,
               latitude: coordinates.latitude,
               longitude: coordinates.longitude,
               locationPoint: coordinates.latitude && coordinates.longitude 
@@ -429,7 +435,7 @@ Use the job context and URL to determine the most accurate location.`;
     }
   }
 
-  private async getCoordinates(location: AILocationResponse): Promise<{ latitude: string; longitude: string }> {
+  private async getCoordinates(location: AILocationResponse): Promise<{ latitude: string; longitude: string; zipcode: string }> {
     const address = [location.city, location.state, location.country]
       .filter(Boolean)
       .join(', ');
@@ -446,18 +452,25 @@ Use the job context and URL to determine the most accurate location.`;
       const result: GeocodingResponse = await response.json();
       
       if (result.status === 'OK' && result.results.length > 0) {
-        const location = result.results[0].geometry.location;
+        const locationData = result.results[0].geometry.location;
+        
+        // Extract postal code from address components
+        const postalCode = result.results[0].address_components.find(
+          component => component.types.includes('postal_code')
+        );
+        
         return {
-          latitude: location.lat.toString(),
-          longitude: location.lng.toString(),
+          latitude: locationData.lat.toString(),
+          longitude: locationData.lng.toString(),
+          zipcode: postalCode?.long_name || '',
         };
       } else {
         console.warn(`Geocoding failed for address: ${address}, status: ${result.status}`);
-        return { latitude: '', longitude: '' };
+        return { latitude: '', longitude: '', zipcode: '' };
       }
     } catch (error) {
       console.warn(`Geocoding error for address: ${address}:`, error);
-      return { latitude: '', longitude: '' };
+      return { latitude: '', longitude: '', zipcode: '' };
     }
   }
 

@@ -10,6 +10,7 @@ interface AzureJobPosting {
   city?: string;
   state?: string;
   country?: string;
+  zipcode?: string;
   latitude?: string;
   longitude?: string;
   location_point?: string;
