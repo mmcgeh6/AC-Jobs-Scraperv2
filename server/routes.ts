@@ -92,6 +92,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post('/api/database/initialize', async (req, res) => {
+    try {
+      console.log('Creating database tables...');
+      
+      // Get database connection
+      const { SQLStorage } = await import('./sql-storage');
+      const sqlStorage = new SQLStorage();
+      const pool = await (sqlStorage as any).getPool();
+      
+      // Create tables
+      const createJobPostingsTable = `
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='job_postings' and xtype='U')
+        CREATE TABLE job_postings (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          jobID NVARCHAR(50) UNIQUE,
+          title NVARCHAR(500),
+          description NVARCHAR(MAX),
+          full_text NVARCHAR(MAX),
+          url NVARCHAR(500),
+          company_name NVARCHAR(200),
+          brand NVARCHAR(200),
+          functional_area NVARCHAR(200),
+          work_type NVARCHAR(100),
+          location_city NVARCHAR(200),
+          location_state NVARCHAR(200),
+          state_abbrev NVARCHAR(10),
+          zip_code NVARCHAR(20),
+          country NVARCHAR(100),
+          latitude NVARCHAR(50),
+          longitude NVARCHAR(50),
+          location_point NVARCHAR(100),
+          job_details_json NVARCHAR(MAX),
+          status NVARCHAR(50),
+          is_expired BIT,
+          record_created_on DATETIME2 DEFAULT GETDATE(),
+          created_at DATETIME2 DEFAULT GETDATE(),
+          last_seen DATETIME2 DEFAULT GETDATE(),
+          lastDayToApply DATETIME2,
+          businessArea NVARCHAR(200)
+        )
+      `;
+      
+      const createPipelineExecutionsTable = `
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='pipeline_executions' and xtype='U')
+        CREATE TABLE pipeline_executions (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          status NVARCHAR(50),
+          startTime DATETIME2 DEFAULT GETDATE(),
+          endTime DATETIME2,
+          totalJobs INT DEFAULT 0,
+          processedJobs INT DEFAULT 0,
+          newJobs INT DEFAULT 0,
+          removedJobs INT DEFAULT 0,
+          currentStep NVARCHAR(500),
+          errorMessage NVARCHAR(MAX)
+        )
+      `;
+      
+      const createActivityLogsTable = `
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='activity_logs' and xtype='U')
+        CREATE TABLE activity_logs (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          message NVARCHAR(1000),
+          level NVARCHAR(50),
+          timestamp DATETIME2 DEFAULT GETDATE(),
+          executionId INT
+        )
+      `;
+      
+      await pool.request().query(createJobPostingsTable);
+      console.log('✅ Created job_postings table');
+      
+      await pool.request().query(createPipelineExecutionsTable);
+      console.log('✅ Created pipeline_executions table');
+      
+      await pool.request().query(createActivityLogsTable);
+      console.log('✅ Created activity_logs table');
+      
+      res.json({ message: 'Database tables created successfully' });
+    } catch (error: any) {
+      console.error('Failed to create database tables:', error);
+      res.status(500).json({ message: 'Failed to create database tables', error: error.message });
+    }
+  });
+
   app.get('/api/system-status', async (req, res) => {
     try {
       // Check if environment variables are set

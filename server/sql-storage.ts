@@ -42,8 +42,18 @@ const connectionString = process.env.DATABASE_URL || "jdbc:sqlserver://acnajobs.
 let pool: sql.ConnectionPool;
 
 async function initializeConnection() {
-  if (!pool) {
+  if (!pool || !pool.connected) {
     try {
+      // Close existing pool if it exists but is not connected
+      if (pool && !pool.connected) {
+        try {
+          await pool.close();
+        } catch (e) {
+          // Ignore close errors
+        }
+        pool = null;
+      }
+
       const config = parseJdbcConnectionString(connectionString);
       console.log('Attempting to connect to Azure SQL with config:', {
         server: config.server,
@@ -51,11 +61,20 @@ async function initializeConnection() {
         user: config.user,
         port: config.port
       });
+      
       pool = new sql.ConnectionPool(config);
       await pool.connect();
       console.log('✅ Successfully connected to Azure SQL Database');
+      
+      // Handle connection errors
+      pool.on('error', (err) => {
+        console.error('Azure SQL connection error:', err);
+        pool = null;
+      });
+      
     } catch (error) {
       console.error('❌ Failed to connect to Azure SQL Database:', error);
+      pool = null;
       throw error;
     }
   }
