@@ -107,43 +107,49 @@ export class SQLStorage implements IStorage {
     console.log(`[SQLStorage] Preparing to insert job: ${jobIdString}`);
 
     try {
-      request.input('jobID', sql.VarChar(50), jobIdString);
+      // Map the fields to match the actual database schema
+      request.input('job_id', sql.VarChar(255), jobIdString);
       request.input('title', sql.NVarChar(500), job.title || '');
+      request.input('url', sql.NVarChar(1000), job.url || '');
       request.input('description', sql.NVarChar(sql.MAX), job.description || null);
       request.input('full_text', sql.NVarChar(sql.MAX), job.full_text || null);
-      request.input('url', sql.VarChar(1000), job.url || null);
-      request.input('company_name', sql.NVarChar(200), job.company_name || null);
-      request.input('brand', sql.NVarChar(200), job.brand || null);
-      request.input('functional_area', sql.NVarChar(200), job.functional_area || null);
+      request.input('company_name', sql.NVarChar(255), job.company_name || null);
+      request.input('brand', sql.NVarChar(255), job.brand || null);
+      request.input('functional_area', sql.NVarChar(255), job.functional_area || null);
       request.input('work_type', sql.NVarChar(100), job.work_type || null);
       request.input('location_city', sql.NVarChar(100), job.location_city || null);
       request.input('location_state', sql.NVarChar(100), job.location_state || null);
-      request.input('state_abbrev', sql.NVarChar(10), job.state_abbrev || null);
-      request.input('zip_code', sql.VarChar(20), job.zip_code || null);
+      request.input('state_abbrev', sql.NVarChar(5), job.state_abbrev || null);
+      request.input('zip_code', sql.NVarChar(10), job.zip_code || null);
       request.input('country', sql.NVarChar(100), job.country || null);
       request.input('latitude', sql.Decimal(10, 8), job.latitude ? parseFloat(String(job.latitude)) : null);
       request.input('longitude', sql.Decimal(11, 8), job.longitude ? parseFloat(String(job.longitude)) : null);
       request.input('job_details_json', sql.NVarChar(sql.MAX), job.job_details_json || null);
-      request.input('status', sql.VarChar(50), job.status || 'Active');
+      request.input('status', sql.NVarChar(50), job.status || 'Active');
       request.input('is_expired', sql.Bit, job.is_expired || false);
-      request.input('lastDayToApply', sql.DateTime2, job.lastDayToApply ? new Date(job.lastDayToApply) : null);
-      request.input('businessArea', sql.NVarChar(200), job.businessArea || null);
+      request.input('created_at', sql.DateTime2, new Date());
+      request.input('record_created_on', sql.DateTime2, new Date());
+      request.input('last_seen', sql.DateTime2, new Date());
 
-      // Handle geospatial data
-      request.input('location_point', sql.NVarChar, job.location_point);
+      // Handle geospatial data using the correct geography format
+      let locationPointValue = null;
+      if (job.latitude && job.longitude) {
+        locationPointValue = `POINT(${job.longitude} ${job.latitude})`;
+      }
+      request.input('location_point_wkt', sql.NVarChar, locationPointValue);
 
       const insertQuery = `
         INSERT INTO job_postings (
-          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
-          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude, location_point,
-          job_details_json, status, is_expired, lastDayToApply, businessArea
+          job_id, title, url, description, full_text, company_name, brand, functional_area, work_type,
+          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude, 
+          job_details_json, status, is_expired, created_at, record_created_on, last_seen, location_point
         )
         OUTPUT INSERTED.*
         VALUES (
-          @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
+          @job_id, @title, @url, @description, @full_text, @company_name, @brand, @functional_area, @work_type,
           @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude, 
-          IIF(@location_point IS NOT NULL, geography::STPointFromText(@location_point, 4326), NULL),
-          @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
+          @job_details_json, @status, @is_expired, @created_at, @record_created_on, @last_seen,
+          IIF(@location_point_wkt IS NOT NULL, geography::STPointFromText(@location_point_wkt, 4326), NULL)
         )
       `;
       
@@ -162,8 +168,8 @@ export class SQLStorage implements IStorage {
   async deleteJobPosting(jobID: string): Promise<void> {
     const pool = await this.getPool();
     const request = pool.request();
-    request.input('jobID', sql.VarChar, jobID);
-    await request.query('DELETE FROM job_postings WHERE jobID = @jobID');
+    request.input('job_id', sql.VarChar, jobID);
+    await request.query('DELETE FROM job_postings WHERE job_id = @job_id');
   }
 
   async deleteJobPostingsByJobIDs(jobIDs: string[]): Promise<void> {
@@ -172,11 +178,11 @@ export class SQLStorage implements IStorage {
     const request = pool.request();
     const nonNullJobIds = jobIDs.filter((id): id is string => id !== null);
     if (nonNullJobIds.length > 0) {
-      const placeholders = nonNullJobIds.map((_, i) => `@jobID${i}`).join(',');
+      const placeholders = nonNullJobIds.map((_, i) => `@job_id${i}`).join(',');
       nonNullJobIds.forEach((id, i) => {
-        request.input(`jobID${i}`, sql.VarChar, id);
+        request.input(`job_id${i}`, sql.VarChar, id);
       });
-      await request.query(`DELETE FROM job_postings WHERE jobID IN (${placeholders})`);
+      await request.query(`DELETE FROM job_postings WHERE job_id IN (${placeholders})`);
     }
   }
 
