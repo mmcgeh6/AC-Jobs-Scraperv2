@@ -433,20 +433,21 @@ REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
   }
 
   private async synchronizeDatabase(enrichedJobs: any[]): Promise<{ newJobs: number; removedJobs: number }> {
-    console.log('💾 Starting database synchronization...');
-    console.log('Total enriched jobs to sync:', enrichedJobs.length);
-    console.log('Sample enriched job structure:', JSON.stringify(enrichedJobs[0], null, 2));
+    try {
+      console.log('💾 Starting database synchronization...');
+      console.log('Total enriched jobs to sync:', enrichedJobs.length);
+      console.log('Sample enriched job structure:', JSON.stringify(enrichedJobs[0], null, 2));
 
-    const existingJobs = await storage.getAllJobPostings();
-    console.log('📊 Existing jobs in database:', existingJobs.length);
-    console.log('Sample existing job:', existingJobs[0] ? JSON.stringify(existingJobs[0], null, 2) : 'No existing jobs');
-    
-    const existingJobIDs = new Set(existingJobs.map(job => job.jobID).filter(Boolean));
-    const newJobIDs = new Set(enrichedJobs.map(job => String(job.data.jobID)));
-    console.log('Existing job IDs count:', existingJobIDs.size);
-    console.log('New job IDs count:', newJobIDs.size);
-    console.log('🔍 Existing job IDs:', Array.from(existingJobIDs));
-    console.log('🔍 New job IDs:', Array.from(newJobIDs));
+      const existingJobs = await storage.getAllJobPostings();
+      console.log('📊 Existing jobs in database:', existingJobs.length);
+      console.log('Sample existing job:', existingJobs[0] ? JSON.stringify(existingJobs[0], null, 2) : 'No existing jobs');
+      
+      const existingJobIDs = new Set(existingJobs.map(job => job.jobID).filter(Boolean));
+      const newJobIDs = new Set(enrichedJobs.map(job => String(job.data.jobID)));
+      console.log('Existing job IDs count:', existingJobIDs.size);
+      console.log('New job IDs count:', newJobIDs.size);
+      console.log('🔍 Existing job IDs:', Array.from(existingJobIDs));
+      console.log('🔍 New job IDs:', Array.from(newJobIDs));
 
     // Find jobs to remove (in database but not in new data)
     const jobsToRemove = existingJobs.filter(job => job.jobID && !newJobIDs.has(String(job.jobID)));
@@ -536,13 +537,17 @@ REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
       }
     }
 
-    console.log('💾 Database sync completed');
-    console.log(`📊 Final stats - Added: ${jobsToAdd.length}, Removed: ${removedJobIDs.length}`);
+      console.log('💾 Database sync completed');
+      console.log(`📊 Final stats - Added: ${jobsToAdd.length}, Removed: ${removedJobIDs.length}`);
 
-    return {
-      newJobs: jobsToAdd.length,
-      removedJobs: removedJobIDs.length
-    };
+      return {
+        newJobs: jobsToAdd.length,
+        removedJobs: removedJobIDs.length
+      };
+    } catch (error) {
+      console.error('💥 Database synchronization failed:', error);
+      throw error;
+    }
   }
 
   getProcessedJobs(): any[] {
