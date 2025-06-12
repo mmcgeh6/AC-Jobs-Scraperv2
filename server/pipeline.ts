@@ -270,41 +270,66 @@ Country: ${job.data.country}
 Job Title: ${job.data.title}
 URL: ${job.data.externalPath}`;
 
+    console.log('🤖 AI Processing Request for Job:', job.data.jobID);
+    console.log('Raw Input Data:', JSON.stringify({
+      city: job.data.city,
+      country: job.data.country,
+      title: job.data.title,
+      url: job.data.externalPath
+    }, null, 2));
+
     try {
+      const requestBody = {
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.8,
+        max_tokens: 4096
+      };
+
+      console.log('📤 Sending to Azure OpenAI:', JSON.stringify(requestBody, null, 2));
+
       const response = await fetch(AZURE_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'api-key': API_KEY,
         },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.8,
-          max_tokens: 4096
-        })
+        body: JSON.stringify(requestBody)
       });
 
+      console.log('🌐 Azure OpenAI Response Status:', response.status, response.statusText);
+
       if (!response.ok) {
-        throw new Error(`Azure OpenAI API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error('🚨 Azure OpenAI Error Response:', errorText);
+        throw new Error(`Azure OpenAI API error: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
+      console.log('📥 Azure OpenAI Raw Response:', JSON.stringify(result, null, 2));
+      
       const content = result.choices[0]?.message?.content;
+      console.log('📝 AI Generated Content:', content);
       
       try {
         const parsed = JSON.parse(content);
-        return {
+        console.log('✅ Successfully Parsed AI Result:', JSON.stringify(parsed, null, 2));
+        
+        const finalResult = {
           city: parsed.city || job.data.city,
           state: parsed.state || '',
           country: parsed.country || job.data.country
         };
-      } catch {
-        // Fallback if JSON parsing fails
+        console.log('🎯 Final AI Processing Result:', JSON.stringify(finalResult, null, 2));
+        
+        return finalResult;
+      } catch (parseError) {
+        console.error('🚨 JSON Parsing Failed:', parseError);
+        console.log('⚠️ Using fallback for JSON parse error');
         return {
           city: job.data.city,
           state: '',
@@ -312,8 +337,8 @@ URL: ${job.data.externalPath}`;
         };
       }
     } catch (error) {
-      console.error('AI processing error:', error);
-      // Fallback to original data
+      console.error('🚨 AI processing error:', error);
+      console.log('⚠️ Using fallback for processing error');
       return {
         city: job.data.city,
         state: '',
@@ -357,30 +382,46 @@ URL: ${job.data.externalPath}`;
   }
 
   private async synchronizeDatabase(enrichedJobs: any[]): Promise<{ newJobs: number; removedJobs: number }> {
+    console.log('💾 Starting database synchronization...');
+    console.log('Total enriched jobs to sync:', enrichedJobs.length);
+    console.log('Sample enriched job structure:', JSON.stringify(enrichedJobs[0], null, 2));
+
     const existingJobs = await storage.getAllJobPostings();
+    console.log('📊 Existing jobs in database:', existingJobs.length);
+    console.log('Sample existing job:', existingJobs[0] ? JSON.stringify(existingJobs[0], null, 2) : 'No existing jobs');
+    
     const existingJobIDs = new Set(existingJobs.map(job => job.jobID).filter(Boolean));
     const newJobIDs = new Set(enrichedJobs.map(job => job.data.jobID));
+    console.log('Existing job IDs count:', existingJobIDs.size);
+    console.log('New job IDs count:', newJobIDs.size);
 
     // Find jobs to remove (in database but not in new data)
     const jobsToRemove = existingJobs.filter(job => job.jobID && !newJobIDs.has(job.jobID));
     const removedJobIDs = jobsToRemove.map(job => job.jobID).filter(Boolean);
+    console.log('🗑️ Jobs to remove:', removedJobIDs.length);
 
     // Remove old jobs
     const validRemovedJobIDs = removedJobIDs.filter((id): id is string => id !== null);
     if (validRemovedJobIDs.length > 0) {
+      console.log('Removing job IDs:', validRemovedJobIDs);
       await storage.deleteJobPostingsByJobIDs(validRemovedJobIDs);
+      console.log('✅ Successfully removed old jobs');
     }
 
     // Find jobs to add (in new data but not in database)
     const jobsToAdd = enrichedJobs.filter(job => !existingJobIDs.has(job.data.jobID));
+    console.log('🆕 New jobs to add:', jobsToAdd.length);
 
     // Add new jobs
-    for (const job of jobsToAdd) {
+    for (let i = 0; i < jobsToAdd.length; i++) {
+      const job = jobsToAdd[i];
+      console.log(`💾 Creating job ${i+1}/${jobsToAdd.length}: ${job.data.jobID}`);
+      
       const lat = parseFloat(job.latitude || '0');
       const lng = parseFloat(job.longitude || '0');
       const locationPoint = lat !== 0 && lng !== 0 ? `POINT (${lng} ${lat})` : null;
 
-      await storage.createJobPosting({
+      const jobData = {
         title: job.data.title,
         description: job.data.description || null,
         full_text: job.data.full_text || null,
@@ -407,8 +448,21 @@ URL: ${job.data.externalPath}`;
         jobID: job.data.jobID,
         lastDayToApply: job.data.lastDayToApply ? new Date(job.data.lastDayToApply) : null,
         businessArea: job.data.businessArea,
-      });
+      };
+
+      console.log('Job data to insert:', JSON.stringify(jobData, null, 2));
+
+      try {
+        const createdJob = await storage.createJobPosting(jobData);
+        console.log('✅ Successfully created job:', createdJob.jobID || createdJob.id);
+      } catch (error: any) {
+        console.error(`🚨 Failed to create job ${job.data.jobID}:`, error.message);
+        console.error('Error details:', error);
+      }
     }
+
+    console.log('💾 Database sync completed');
+    console.log(`📊 Final stats - Added: ${jobsToAdd.length}, Removed: ${removedJobIDs.length}`);
 
     return {
       newJobs: jobsToAdd.length,
