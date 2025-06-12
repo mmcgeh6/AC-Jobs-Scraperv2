@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { wsManager } from "@/lib/websocket";
@@ -73,6 +73,7 @@ export default function ControlCenter() {
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress | null>(null);
   const [showProgress, setShowProgress] = useState(false);
   const [batchSize, setBatchSize] = useState(50);
+  const [activeTab, setActiveTab] = useState('control');
 
   // Queries
   const { data: pipelineStatus, refetch: refetchStatus } = useQuery<PipelineStatus>({
@@ -90,16 +91,22 @@ export default function ControlCenter() {
     refetchInterval: 30000,
   });
 
+  const { data: processedJobs = [] } = useQuery<any[]>({
+    queryKey: ['/api/processed-jobs'],
+    refetchInterval: 5000,
+  });
+
   // Mutations
   const startPipelineMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/pipeline/start'),
+    mutationFn: () => apiRequest('POST', '/api/pipeline/start', { batchSize }),
     onSuccess: () => {
       toast({
         title: "Pipeline Started",
-        description: "Data pipeline execution has been initiated.",
+        description: `Processing ${batchSize} jobs from Algolia.`,
       });
       setShowProgress(true);
       refetchStatus();
+      queryClient.invalidateQueries({ queryKey: ['/api/processed-jobs'] });
     },
     onError: (error: any) => {
       toast({
@@ -267,10 +274,50 @@ export default function ControlCenter() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
+        {/* Custom Tab Navigation */}
+        <div className="mb-8">
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setActiveTab('control')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'control'
+                    ? 'border-azure-blue text-azure-blue'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Pipeline Control
+              </button>
+              <button
+                onClick={() => setActiveTab('data')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'data'
+                    ? 'border-azure-blue text-azure-blue'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Processed Data ({processedJobs.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('system')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'system'
+                    ? 'border-azure-blue text-azure-blue'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                System Status
+              </button>
+            </nav>
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'control' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            {/* Main Content */}
+            <div className="lg:col-span-2 space-y-6">
             {/* Pipeline Control Card */}
             <Card>
               <CardContent className="p-6">
@@ -282,12 +329,33 @@ export default function ControlCenter() {
                   {getStatusBadge()}
                 </div>
 
+                {/* Batch Size Control */}
+                <div className="border rounded-lg p-4 mb-4 bg-gray-50">
+                  <Label htmlFor="batchSize" className="text-sm font-medium text-neutral-dark">
+                    Batch Size (Number of jobs to process)
+                  </Label>
+                  <div className="flex items-center space-x-4 mt-2">
+                    <Input
+                      id="batchSize"
+                      type="number"
+                      value={batchSize}
+                      onChange={(e) => setBatchSize(Number(e.target.value))}
+                      min={1}
+                      max={1000}
+                      className="w-32"
+                    />
+                    <span className="text-sm text-gray-500">
+                      Recommended: 50-100 for testing, up to 1000 for production
+                    </span>
+                  </div>
+                </div>
+
                 {/* Manual Trigger Section */}
                 <div className="border rounded-lg p-4 mb-6 bg-gradient-to-r from-azure-blue/5 to-azure-dark/5">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <h3 className="font-medium text-neutral-dark mb-2">Manual Pipeline Execution</h3>
-                      <p className="text-sm text-gray-600 mb-4">Execute the complete data pipeline: Algolia → AI Processing → Geocoding → SQL Database</p>
+                      <p className="text-sm text-gray-600 mb-4">Process {batchSize} jobs: Algolia → AI Processing → Geocoding → SQL Database</p>
                       
                       {/* Pipeline Steps Preview */}
                       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
@@ -610,8 +678,197 @@ export default function ControlCenter() {
                 </div>
               </CardContent>
             </Card>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'data' && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <FileText className="h-5 w-5 text-azure-blue" />
+                  <span>Processed Job Data</span>
+                  <Badge variant="outline" className="ml-2">
+                    {processedJobs.length} jobs
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {processedJobs.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Eye className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                    <p>No processed jobs available</p>
+                    <p className="text-sm">Run the pipeline to see job data here</p>
+                  </div>
+                ) : (
+                  <ScrollArea className="h-96">
+                    <div className="space-y-4">
+                      {processedJobs.map((job, index) => (
+                        <div key={index} className="border rounded-lg p-4 bg-gray-50">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                              <h4 className="font-medium text-sm text-azure-blue mb-2">Original Data</h4>
+                              <div className="text-xs space-y-1">
+                                <p><strong>Title:</strong> {job.originalData?.title}</p>
+                                <p><strong>Job ID:</strong> {job.originalData?.jobID}</p>
+                                <p><strong>City:</strong> {job.originalData?.city}</p>
+                                <p><strong>Country:</strong> {job.originalData?.country}</p>
+                                <p><strong>Business Area:</strong> {job.originalData?.businessArea}</p>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-sm text-success-green mb-2">AI Processed</h4>
+                              <div className="text-xs space-y-1">
+                                <p><strong>Parsed City:</strong> {job.aiProcessed?.city}</p>
+                                <p><strong>Parsed State:</strong> {job.aiProcessed?.state}</p>
+                                <p><strong>Parsed Country:</strong> {job.aiProcessed?.country}</p>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 className="font-medium text-sm text-warning-orange mb-2">Geocoded</h4>
+                              <div className="text-xs space-y-1">
+                                <p><strong>Latitude:</strong> {job.coordinates?.latitude}</p>
+                                <p><strong>Longitude:</strong> {job.coordinates?.longitude}</p>
+                                <p><strong>Processed:</strong> {new Date(job.timestamp).toLocaleTimeString()}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {activeTab === 'system' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <BarChart3 className="h-5 w-5 text-azure-blue" />
+                    <span>System Status</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <Search className="h-5 w-5 text-azure-blue" />
+                          <div>
+                            <h3 className="font-medium text-neutral-dark">Algolia API</h3>
+                            <p className="text-xs text-gray-500">Job listings source</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="bg-success-green/10 text-success-green border-success-green/20">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Online
+                        </Badge>
+                      </div>
+                    </div>
+                    
+                    <div className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <Brain className="h-5 w-5 text-azure-blue" />
+                          <div>
+                            <h3 className="font-medium text-neutral-dark">Azure OpenAI</h3>
+                            <p className="text-xs text-gray-500">GPT-4o-mini</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className={
+                          systemStatus?.azureOpenAI 
+                            ? "bg-success-green/10 text-success-green border-success-green/20"
+                            : "bg-error-red/10 text-error-red border-error-red/20"
+                        }>
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          {systemStatus?.azureOpenAI ? 'Online' : 'Offline'}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <MapPin className="h-5 w-5 text-azure-blue" />
+                          <div>
+                            <h3 className="font-medium text-neutral-dark">Google Geocoding</h3>
+                            <p className="text-xs text-gray-500">Location coordinates</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className={
+                          systemStatus?.googleGeocoding 
+                            ? "bg-success-green/10 text-success-green border-success-green/20"
+                            : "bg-error-red/10 text-error-red border-error-red/20"
+                        }>
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          {systemStatus?.googleGeocoding ? 'Online' : 'Offline'}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <Database className="h-5 w-5 text-azure-blue" />
+                          <div>
+                            <h3 className="font-medium text-neutral-dark">Azure SQL Database</h3>
+                            <p className="text-xs text-gray-500">Data storage</p>
+                          </div>
+                        </div>
+                        <Badge variant="outline" className="bg-success-green/10 text-success-green border-success-green/20">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Connected
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Pipeline Statistics</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center p-3 border rounded-lg">
+                      <span className="text-gray-600">Last Execution</span>
+                      <span className="font-medium">
+                        {pipelineStatus?.startTime 
+                          ? formatDate(pipelineStatus.startTime) 
+                          : 'Never'
+                        }
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 border rounded-lg">
+                      <span className="text-gray-600">Total Jobs Processed</span>
+                      <span className="font-medium">{pipelineStatus?.totalJobs || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 border rounded-lg">
+                      <span className="text-gray-600">New Jobs Added</span>
+                      <span className="font-medium text-success-green">{pipelineStatus?.newJobs || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 border rounded-lg">
+                      <span className="text-gray-600">Jobs Removed</span>
+                      <span className="font-medium text-error-red">{pipelineStatus?.removedJobs || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 border rounded-lg">
+                      <span className="text-gray-600">Current Status</span>
+                      <span className="font-medium">{pipelineStatus?.status || 'Idle'}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
