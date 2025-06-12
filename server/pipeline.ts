@@ -186,48 +186,28 @@ export class PipelineService {
   }
 
   private async fetchJobsFromAlgolia(): Promise<AlgoliaJob[]> {
-    const APP_ID = process.env.ALGOLIA_APPLICATION_ID;
-    const API_KEY = process.env.ALGOLIA_API_KEY;
+    // Use your working script configuration
+    const APP_ID = 'LXMKS8ARA3';
+    const API_KEY = '933a2398c301661168ab0f240713ec3d';
+    const INDEX_NAME = 'GROUP_EN_dateDesc';
     
-    if (!APP_ID || !API_KEY) {
-      throw new Error('Algolia credentials not found in environment variables');
-    }
-
-    // First, try to get list of available indexes to help user configure
-    try {
-      const indexResponse = await fetch(`https://${APP_ID}-dsn.algolia.net/1/indexes`, {
-        headers: {
-          'X-Algolia-Application-Id': APP_ID,
-          'X-Algolia-API-Key': API_KEY,
-        }
-      });
-
-      if (indexResponse.ok) {
-        const indexes = await indexResponse.json();
-        console.log('Available Algolia indexes:', indexes.items?.map((idx: any) => idx.name));
-      }
-    } catch (e) {
-      console.log('Could not fetch index list');
-    }
-
     const allJobs: AlgoliaJob[] = [];
     let page = 0;
-    let hasMore = true;
-    const indexName = process.env.ALGOLIA_INDEX_NAME || 'prod_jobs'; // Common job index names
+    let totalPages = 1;
 
-    while (hasMore && page < 10) { // Limit to prevent infinite loops
+    console.log('Starting job fetch from Algolia...');
+
+    while (page < totalPages) {
       try {
-        const response = await fetch(`https://${APP_ID}-dsn.algolia.net/1/indexes/${indexName}/query`, {
+        const response = await fetch(`https://${APP_ID}.algolia.net/1/indexes/${INDEX_NAME}/query`, {
           method: 'POST',
           headers: {
-            'X-Algolia-Application-Id': APP_ID,
             'X-Algolia-API-Key': API_KEY,
+            'X-Algolia-Application-Id': APP_ID,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            query: '',
-            page: page,
-            hitsPerPage: 1000
+            params: `filters=data.country:"United States"&hitsPerPage=100&page=${page}`
           })
         });
 
@@ -236,50 +216,31 @@ export class PipelineService {
           throw new Error(`Algolia API error: ${response.status} ${response.statusText} - ${errorText}`);
         }
 
-        const searchResult = await response.json() as AlgoliaResponse;
+        const responseData = await response.json() as AlgoliaResponse;
         
-        if (searchResult.hits && searchResult.hits.length > 0) {
-          allJobs.push(...searchResult.hits);
+        if (responseData.hits) {
+          allJobs.push(...responseData.hits);
         }
+
+        // On the first request, set the total number of pages
+        if (page === 0) {
+          totalPages = responseData.nbPages || 1;
+          console.log(`Total pages to fetch: ${totalPages}`);
+        }
+
+        console.log(`Fetched page ${page + 1} of ${totalPages}. Total jobs so far: ${allJobs.length}`);
         
         page++;
-        hasMore = page < (searchResult.nbPages || 1) && searchResult.hits.length > 0;
         
         // Add small delay to respect rate limits
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error: any) {
-        console.error('Error fetching from Algolia:', error);
-        
-        // If index not found, try common variations
-        if (error.message.includes('404') && page === 0) {
-          const commonNames = ['jobs', 'job_postings', 'careers', 'positions', 'job_listings'];
-          for (const name of commonNames) {
-            try {
-              const testResponse = await fetch(`https://${APP_ID}-dsn.algolia.net/1/indexes/${name}/query`, {
-                method: 'POST',
-                headers: {
-                  'X-Algolia-Application-Id': APP_ID,
-                  'X-Algolia-API-Key': API_KEY,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ query: '', hitsPerPage: 1 })
-              });
-              
-              if (testResponse.ok) {
-                console.log(`Found working index: ${name}`);
-                // Retry with found index
-                return this.fetchJobsFromAlgolia();
-              }
-            } catch (e) {
-              // Continue trying
-            }
-          }
-        }
-        
-        throw error;
+        console.error(`Error fetching page ${page}:`, error);
+        throw new Error(`Failed to fetch jobs on page ${page}: ${error.message}`);
       }
     }
 
+    console.log(`Finished fetching. Total jobs found: ${allJobs.length}`);
     return allJobs;
   }
 

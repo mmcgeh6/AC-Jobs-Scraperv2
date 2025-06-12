@@ -1,0 +1,68 @@
+// This script fetches ALL job listings by handling pagination.
+
+const options = {
+  url: 'https://LXMKS8ARA3.algolia.net/1/indexes/GROUP_EN_dateDesc/query',
+  headers: {
+    "X-Algolia-API-Key": "933a2398c301661168ab0f240713ec3d",
+    "X-Algolia-Application-Id": "LXMKS8ARA3",
+  },
+  method: 'POST',
+  json: true,
+};
+
+// --- Main function to fetch all jobs ---
+async function fetchAllJobs() {
+  let allHits = [];
+  let page = 0;
+  let totalPages = 1; // Start with 1 to ensure the loop runs at least once
+
+  console.log('Starting job fetch...');
+
+  // Loop as long as the current page is less than the total number of pages
+  while (page < totalPages) {
+    const body = {
+      params: `filters=data.country:"United States"&hitsPerPage=100&page=${page}`,
+    };
+
+    try {
+      // Make the request for the current page
+      const responseData = await this.helpers.httpRequest({ ...options, body });
+      
+      if (responseData.hits) {
+        allHits = allHits.concat(responseData.hits);
+      }
+
+      // On the first request, set the total number of pages
+      if (page === 0) {
+        totalPages = responseData.nbPages || 1;
+        console.log(`Total pages to fetch: ${totalPages}`);
+      }
+
+      console.log(`Fetched page ${page + 1} of ${totalPages}. Total jobs so far: ${allHits.length}`);
+      
+      // Move to the next page
+      page++;
+
+    } catch (error) {
+      console.error(`Error fetching page ${page}:`, error);
+      // Stop the loop if a page fails
+      throw new Error(`Failed to fetch jobs on page ${page}: ${error.message}`);
+    }
+  }
+
+  console.log(`Finished fetching. Total jobs found: ${allHits.length}`);
+  return allHits;
+}
+
+
+// --- Execute the function and return data to n8n ---
+try {
+  const allJobs = await fetchAllJobs();
+  
+  // Transform the data into the standard n8n format for the next node.
+  return allJobs.map(hit => ({ json: hit }));
+
+} catch (error) {
+  console.error('Workflow failed:', error);
+  throw error; // Propagate the error to stop the workflow
+}
