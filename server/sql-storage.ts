@@ -11,19 +11,18 @@ import type { IStorage } from "./storage";
 
 // Parse JDBC connection string to SQL Server config
 function parseJdbcConnectionString(jdbcUrl: string) {
-  // Extract connection parameters from JDBC URL
-  const serverMatch = jdbcUrl.match(/\/\/([^:]+):(\d+)/);
+  const serverMatch = jdbcUrl.match(/:\/\/(.[^:]+):(\d+)/);
   const databaseMatch = jdbcUrl.match(/database=([^;]+)/);
   const userMatch = jdbcUrl.match(/user=([^;]+)/);
   const passwordMatch = jdbcUrl.match(/password=([^;]+)/);
-  
+
   if (!serverMatch || !databaseMatch || !userMatch || !passwordMatch) {
-    throw new Error("Invalid JDBC connection string format");
+    throw new Error("Invalid JDBC connection string format. Could not parse all required components.");
   }
 
   return {
     server: serverMatch[1],
-    port: parseInt(serverMatch[2]),
+    port: parseInt(serverMatch[2], 10),
     database: databaseMatch[1],
     user: userMatch[1],
     password: passwordMatch[1],
@@ -37,53 +36,52 @@ function parseJdbcConnectionString(jdbcUrl: string) {
   };
 }
 
-const connectionString = process.env.DATABASE_URL || "jdbc:sqlserver://acnajobs.database.windows.net:1433;database=ac jobs scraper;user=CloudSAde530614@acnajobs;password=@pmP$@5UmMcZS8AX;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;";
+const connectionString = process.env.DATABASE_URL;
 
-let pool: sql.ConnectionPool;
+let pool: sql.ConnectionPool | null = null;
 
-async function initializeConnection() {
-  if (!pool || !pool.connected) {
-    try {
-      // Close existing pool if it exists but is not connected
-      if (pool && !pool.connected) {
-        try {
-          await pool.close();
-        } catch (e) {
-          // Ignore close errors
-        }
-        pool = null;
-      }
-
-      const config = parseJdbcConnectionString(connectionString);
-      console.log('Attempting to connect to Azure SQL with config:', {
-        server: config.server,
-        database: config.database,
-        user: config.user,
-        port: config.port
-      });
-      
-      pool = new sql.ConnectionPool(config);
-      await pool.connect();
-      console.log('✅ Successfully connected to Azure SQL Database');
-      
-      // Handle connection errors
-      pool.on('error', (err) => {
-        console.error('Azure SQL connection error:', err);
-        pool = null;
-      });
-      
-    } catch (error) {
-      console.error('❌ Failed to connect to Azure SQL Database:', error);
-      pool = null;
-      throw error;
-    }
+async function initializeConnection(): Promise<sql.ConnectionPool> {
+  if (pool && pool.connected) {
+    return pool;
   }
-  return pool;
+
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not defined in environment variables.");
+  }
+  
+  try {
+    const config = parseJdbcConnectionString(connectionString);
+    console.log('Attempting to connect to Azure SQL with config:', {
+      server: config.server,
+      database: config.database,
+      user: config.user,
+      port: config.port
+    });
+    
+    pool = new sql.ConnectionPool(config);
+    
+    pool.on('error', (err) => {
+      console.error('Azure SQL connection error:', err);
+      pool = null; // Reset pool on error
+    });
+
+    await pool.connect();
+    console.log('✅ Successfully connected to Azure SQL Database');
+    
+    return pool;
+  } catch (error) {
+    console.error('❌ Failed to connect to Azure SQL Database:', error);
+    pool = null;
+    throw error;
+  }
 }
 
 export class SQLStorage implements IStorage {
-  private async getPool() {
-    return await initializeConnection();
+  private async getPool(): Promise<sql.ConnectionPool> {
+    if (!pool || !pool.connected) {
+      return initializeConnection();
+    }
+    return pool;
   }
 
   async getAllJobPostings(): Promise<JobPosting[]> {
@@ -105,58 +103,60 @@ export class SQLStorage implements IStorage {
     const pool = await this.getPool();
     const request = pool.request();
     
-    // Ensure jobID is properly formatted as varchar string
     const jobIdString = String(job.jobID);
-    console.log(`🔧 Inserting job with ID: "${jobIdString}" (type: ${typeof jobIdString})`);
-    
-    // Map the job object properties to match the database schema
-    request.input('jobID', sql.VarChar(50), jobIdString);
-    request.input('title', sql.VarChar(500), job.title || '');
-    request.input('description', sql.Text, job.description);
-    request.input('full_text', sql.Text, job.full_text);
-    request.input('url', sql.VarChar(1000), job.url);
-    request.input('company_name', sql.VarChar(200), job.company_name);
-    request.input('brand', sql.VarChar(200), job.brand);
-    request.input('functional_area', sql.VarChar(200), job.functional_area);
-    request.input('work_type', sql.VarChar(100), job.work_type);
-    request.input('location_city', sql.VarChar(100), job.location_city);
-    request.input('location_state', sql.VarChar(100), job.location_state);
-    request.input('state_abbrev', sql.VarChar(10), job.state_abbrev);
-    request.input('zip_code', sql.VarChar(20), job.zip_code);
-    request.input('country', sql.VarChar(100), job.country);
-    
-    // Handle coordinates with proper decimal conversion
-    const lat = job.latitude ? parseFloat(String(job.latitude)) : null;
-    const lng = job.longitude ? parseFloat(String(job.longitude)) : null;
-    const hasValidCoords = lat !== null && lng !== null && lat !== 0 && lng !== 0 && !isNaN(lat) && !isNaN(lng);
-    
-    request.input('latitude', sql.Decimal(10, 8), lat);
-    request.input('longitude', sql.Decimal(11, 8), lng);
-    request.input('job_details_json', sql.Text, job.job_details_json);
-    request.input('status', sql.VarChar(50), job.status || 'Active');
-    request.input('is_expired', sql.Bit, job.is_expired || false);
-    request.input('lastDayToApply', sql.DateTime, job.lastDayToApply);
-    request.input('businessArea', sql.VarChar(200), job.businessArea);
-    
-    // Use a simplified insert that works with existing table structure
-    const insertQuery = `
-      INSERT INTO job_postings (
-        jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
-        location_city, location_state, state_abbrev, zip_code, country, latitude, longitude,
-        job_details_json, status, is_expired, lastDayToApply, businessArea
-      )
-      OUTPUT INSERTED.*
-      VALUES (
-        @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
-        @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude,
-        @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
-      )
-    `;
-    
-    console.log(`📊 Executing SQL insert for job ${jobIdString}`);
-    const result = await request.query(insertQuery);
-    console.log(`✅ Successfully inserted job ${jobIdString} into database`);
-    return result.recordset[0];
+    console.log(`[SQLStorage] Preparing to insert job: ${jobIdString}`);
+
+    try {
+      request.input('jobID', sql.VarChar(50), jobIdString);
+      request.input('title', sql.NVarChar(500), job.title || '');
+      request.input('description', sql.NVarChar(sql.MAX), job.description || null);
+      request.input('full_text', sql.NVarChar(sql.MAX), job.full_text || null);
+      request.input('url', sql.VarChar(1000), job.url || null);
+      request.input('company_name', sql.NVarChar(200), job.company_name || null);
+      request.input('brand', sql.NVarChar(200), job.brand || null);
+      request.input('functional_area', sql.NVarChar(200), job.functional_area || null);
+      request.input('work_type', sql.NVarChar(100), job.work_type || null);
+      request.input('location_city', sql.NVarChar(100), job.location_city || null);
+      request.input('location_state', sql.NVarChar(100), job.location_state || null);
+      request.input('state_abbrev', sql.NVarChar(10), job.state_abbrev || null);
+      request.input('zip_code', sql.VarChar(20), job.zip_code || null);
+      request.input('country', sql.NVarChar(100), job.country || null);
+      request.input('latitude', sql.Decimal(10, 8), job.latitude ? parseFloat(String(job.latitude)) : null);
+      request.input('longitude', sql.Decimal(11, 8), job.longitude ? parseFloat(String(job.longitude)) : null);
+      request.input('job_details_json', sql.NVarChar(sql.MAX), job.job_details_json || null);
+      request.input('status', sql.VarChar(50), job.status || 'Active');
+      request.input('is_expired', sql.Bit, job.is_expired || false);
+      request.input('lastDayToApply', sql.DateTime2, job.lastDayToApply ? new Date(job.lastDayToApply) : null);
+      request.input('businessArea', sql.NVarChar(200), job.businessArea || null);
+
+      // Handle geospatial data
+      request.input('location_point', sql.NVarChar, job.location_point);
+
+      const insertQuery = `
+        INSERT INTO job_postings (
+          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
+          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude, location_point,
+          job_details_json, status, is_expired, lastDayToApply, businessArea
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
+          @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude, 
+          IIF(@location_point IS NOT NULL, geography::STPointFromText(@location_point, 4326), NULL),
+          @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
+        )
+      `;
+      
+      console.log(`[SQLStorage] Executing insert for job: ${jobIdString}`);
+      const result = await request.query(insertQuery);
+      console.log(`[SQLStorage] Successfully inserted job: ${jobIdString}`);
+      
+      return result.recordset[0];
+
+    } catch (error) {
+      console.error(`[SQLStorage] Error inserting job ${jobIdString}:`, error);
+      throw error;
+    }
   }
   
   async deleteJobPosting(jobID: string): Promise<void> {
@@ -209,39 +209,33 @@ export class SQLStorage implements IStorage {
     request.input('id', sql.Int, id);
     
     const updateFields: string[] = [];
-    if (updates.status !== undefined) {
-      request.input('status', sql.VarChar, updates.status);
-      updateFields.push('status = @status');
-    }
-    if (updates.endTime !== undefined) {
-      request.input('endTime', sql.DateTime, updates.endTime);
-      updateFields.push('endTime = @endTime');
-    }
-    if (updates.totalJobs !== undefined) {
-      request.input('totalJobs', sql.Int, updates.totalJobs);
-      updateFields.push('totalJobs = @totalJobs');
-    }
-    if (updates.processedJobs !== undefined) {
-      request.input('processedJobs', sql.Int, updates.processedJobs);
-      updateFields.push('processedJobs = @processedJobs');
-    }
-    if (updates.newJobs !== undefined) {
-      request.input('newJobs', sql.Int, updates.newJobs);
-      updateFields.push('newJobs = @newJobs');
-    }
-    if (updates.removedJobs !== undefined) {
-      request.input('removedJobs', sql.Int, updates.removedJobs);
-      updateFields.push('removedJobs = @removedJobs');
-    }
-    if (updates.currentStep !== undefined) {
-      request.input('currentStep', sql.VarChar, updates.currentStep);
-      updateFields.push('currentStep = @currentStep');
-    }
-    if (updates.errorMessage !== undefined) {
-      request.input('errorMessage', sql.VarChar, updates.errorMessage);
-      updateFields.push('errorMessage = @errorMessage');
+    for (const key in updates) {
+        if (Object.prototype.hasOwnProperty.call(updates, key) && key !== 'id') {
+            const value = updates[key as keyof typeof updates];
+            const paramName = `param_${key}`;
+            
+            let type;
+            switch(typeof value) {
+                case 'string': type = sql.NVarChar(sql.MAX); break;
+                case 'number': type = sql.Int; break;
+                case 'boolean': type = sql.Bit; break;
+                case 'object': 
+                    if (value instanceof Date) type = sql.DateTime2;
+                    else type = sql.NVarChar(sql.MAX);
+                    break;
+                default: type = sql.NVarChar(sql.MAX);
+            }
+            
+            request.input(paramName, type, value);
+            updateFields.push(`${key} = @${paramName}`);
+        }
     }
     
+    if (updateFields.length === 0) {
+        const res = await pool.request().input('id', sql.Int, id).query('SELECT * FROM pipeline_executions WHERE id = @id');
+        return res.recordset[0];
+    }
+
     const result = await request.query(`
       UPDATE pipeline_executions 
       SET ${updateFields.join(', ')}
@@ -262,14 +256,15 @@ export class SQLStorage implements IStorage {
     const pool = await this.getPool();
     const request = pool.request();
     
-    request.input('message', sql.VarChar, log.message);
-    request.input('level', sql.VarChar, log.level);
-    request.input('timestamp', sql.DateTime, log.timestamp);
+    request.input('message', sql.NVarChar(sql.MAX), log.message);
+    request.input('level', sql.VarChar(50), log.level);
+    request.input('timestamp', sql.DateTime2, new Date());
+    request.input('executionId', sql.Int, log.executionId)
     
     const result = await request.query(`
-      INSERT INTO activity_logs (message, level, timestamp)
+      INSERT INTO activity_logs (message, level, timestamp, executionId)
       OUTPUT INSERTED.*
-      VALUES (@message, @level, @timestamp)
+      VALUES (@message, @level, @timestamp, @executionId)
     `);
     return result.recordset[0];
   }

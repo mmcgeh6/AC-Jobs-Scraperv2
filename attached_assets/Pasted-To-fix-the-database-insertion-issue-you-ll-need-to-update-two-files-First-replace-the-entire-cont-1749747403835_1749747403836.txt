@@ -1,0 +1,567 @@
+To fix the database insertion issue, you'll need to update two files. First, replace the entire content of your server/sql-storage.ts file with the following code. This new version corrects the SQL query to include the location_point and adds more detailed logging to track the insertion process.
+
+Tell Replit to write this to server/sql-storage.ts:
+
+TypeScript
+
+import sql from "mssql";
+import type {
+  JobPosting,
+  InsertJobPosting,
+  PipelineExecution,
+  InsertPipelineExecution,
+  ActivityLog,
+  InsertActivityLog,
+} from "../shared/schema";
+import type { IStorage } from "./storage";
+
+// Parse JDBC connection string to SQL Server config
+function parseJdbcConnectionString(jdbcUrl: string) {
+  const serverMatch = jdbcUrl.match(/:\/\/(.[^:]+):(\d+)/);
+  const databaseMatch = jdbcUrl.match(/database=([^;]+)/);
+  const userMatch = jdbcUrl.match(/user=([^;]+)/);
+  const passwordMatch = jdbcUrl.match(/password=([^;]+)/);
+
+  if (!serverMatch || !databaseMatch || !userMatch || !passwordMatch) {
+    throw new Error("Invalid JDBC connection string format. Could not parse all required components.");
+  }
+
+  return {
+    server: serverMatch[1],
+    port: parseInt(serverMatch[2], 10),
+    database: databaseMatch[1],
+    user: userMatch[1],
+    password: passwordMatch[1],
+    options: {
+      encrypt: true,
+      trustServerCertificate: false,
+      enableArithAbort: true,
+    },
+    connectionTimeout: 30000,
+    requestTimeout: 30000,
+  };
+}
+
+const connectionString = process.env.DATABASE_URL;
+
+let pool: sql.ConnectionPool | null = null;
+
+async function initializeConnection(): Promise<sql.ConnectionPool> {
+  if (pool && pool.connected) {
+    return pool;
+  }
+
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not defined in environment variables.");
+  }
+  
+  try {
+    const config = parseJdbcConnectionString(connectionString);
+    console.log('Attempting to connect to Azure SQL with config:', {
+      server: config.server,
+      database: config.database,
+      user: config.user,
+      port: config.port
+    });
+    
+    pool = new sql.ConnectionPool(config);
+    
+    pool.on('error', (err) => {
+      console.error('Azure SQL connection error:', err);
+      pool = null; // Reset pool on error
+    });
+
+    await pool.connect();
+    console.log('✅ Successfully connected to Azure SQL Database');
+    
+    return pool;
+  } catch (error) {
+    console.error('❌ Failed to connect to Azure SQL Database:', error);
+    pool = null;
+    throw error;
+  }
+}
+
+export class SQLStorage implements IStorage {
+  private async getPool(): Promise<sql.ConnectionPool> {
+    if (!pool || !pool.connected) {
+      return initializeConnection();
+    }
+    return pool;
+  }
+
+  async getAllJobPostings(): Promise<JobPosting[]> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    const result = await request.query('SELECT * FROM job_postings ORDER BY id DESC');
+    return result.recordset;
+  }
+
+  async getJobPostingByJobID(jobID: string): Promise<JobPosting | undefined> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    request.input('jobID', sql.VarChar, jobID);
+    const result = await request.query('SELECT * FROM job_postings WHERE jobID = @jobID');
+    return result.recordset[0];
+  }
+
+  async createJobPosting(job: InsertJobPosting): Promise<JobPosting> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    
+    const jobIdString = String(job.jobID);
+    console.log(`[SQLStorage] Preparing to insert job: ${jobIdString}`);
+
+    try {
+      request.input('jobID', sql.VarChar(50), jobIdString);
+      request.input('title', sql.NVarChar(500), job.title || '');
+      request.input('description', sql.NVarChar(sql.MAX), job.description || null);
+      request.input('full_text', sql.NVarChar(sql.MAX), job.full_text || null);
+      request.input('url', sql.VarChar(1000), job.url || null);
+      request.input('company_name', sql.NVarChar(200), job.company_name || null);
+      request.input('brand', sql.NVarChar(200), job.brand || null);
+      request.input('functional_area', sql.NVarChar(200), job.functional_area || null);
+      request.input('work_type', sql.NVarChar(100), job.work_type || null);
+      request.input('location_city', sql.NVarChar(100), job.location_city || null);
+      request.input('location_state', sql.NVarChar(100), job.location_state || null);
+      request.input('state_abbrev', sql.NVarChar(10), job.state_abbrev || null);
+      request.input('zip_code', sql.VarChar(20), job.zip_code || null);
+      request.input('country', sql.NVarChar(100), job.country || null);
+      request.input('latitude', sql.Decimal(10, 8), job.latitude ? parseFloat(String(job.latitude)) : null);
+      request.input('longitude', sql.Decimal(11, 8), job.longitude ? parseFloat(String(job.longitude)) : null);
+      request.input('job_details_json', sql.NVarChar(sql.MAX), job.job_details_json || null);
+      request.input('status', sql.VarChar(50), job.status || 'Active');
+      request.input('is_expired', sql.Bit, job.is_expired || false);
+      request.input('lastDayToApply', sql.DateTime2, job.lastDayToApply ? new Date(job.lastDayToApply) : null);
+      request.input('businessArea', sql.NVarChar(200), job.businessArea || null);
+
+      // Handle geospatial data
+      request.input('location_point', sql.NVarChar, job.location_point);
+
+      const insertQuery = `
+        INSERT INTO job_postings (
+          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
+          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude, location_point,
+          job_details_json, status, is_expired, lastDayToApply, businessArea
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
+          @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude, 
+          IIF(@location_point IS NOT NULL, geography::STPointFromText(@location_point, 4326), NULL),
+          @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
+        )
+      `;
+      
+      console.log(`[SQLStorage] Executing insert for job: ${jobIdString}`);
+      const result = await request.query(insertQuery);
+      console.log(`[SQLStorage] Successfully inserted job: ${jobIdString}`);
+      
+      return result.recordset[0];
+
+    } catch (error) {
+      console.error(`[SQLStorage] Error inserting job ${jobIdString}:`, error);
+      throw error;
+    }
+  }
+  
+  async deleteJobPosting(jobID: string): Promise<void> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    request.input('jobID', sql.VarChar, jobID);
+    await request.query('DELETE FROM job_postings WHERE jobID = @jobID');
+  }
+
+  async deleteJobPostingsByJobIDs(jobIDs: string[]): Promise<void> {
+    if (jobIDs.length === 0) return;
+    const pool = await this.getPool();
+    const request = pool.request();
+    const nonNullJobIds = jobIDs.filter((id): id is string => id !== null);
+    if (nonNullJobIds.length > 0) {
+      const placeholders = nonNullJobIds.map((_, i) => `@jobID${i}`).join(',');
+      nonNullJobIds.forEach((id, i) => {
+        request.input(`jobID${i}`, sql.VarChar, id);
+      });
+      await request.query(`DELETE FROM job_postings WHERE jobID IN (${placeholders})`);
+    }
+  }
+
+  async createPipelineExecution(execution: InsertPipelineExecution): Promise<PipelineExecution> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    
+    request.input('status', sql.VarChar, execution.status);
+    request.input('startTime', sql.DateTime, execution.startTime);
+    request.input('endTime', sql.DateTime, execution.endTime || null);
+    request.input('totalJobs', sql.Int, execution.totalJobs);
+    request.input('processedJobs', sql.Int, execution.processedJobs);
+    request.input('newJobs', sql.Int, execution.newJobs);
+    request.input('removedJobs', sql.Int, execution.removedJobs);
+    request.input('currentStep', sql.VarChar, execution.currentStep);
+    request.input('errorMessage', sql.VarChar, execution.errorMessage || null);
+    
+    const result = await request.query(`
+      INSERT INTO pipeline_executions (status, startTime, endTime, totalJobs, processedJobs, newJobs, removedJobs, currentStep, errorMessage)
+      OUTPUT INSERTED.*
+      VALUES (@status, @startTime, @endTime, @totalJobs, @processedJobs, @newJobs, @removedJobs, @currentStep, @errorMessage)
+    `);
+    return result.recordset[0];
+  }
+
+  async updatePipelineExecution(id: number, updates: Partial<PipelineExecution>): Promise<PipelineExecution> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    
+    request.input('id', sql.Int, id);
+    
+    const updateFields: string[] = [];
+    for (const key in updates) {
+        if (Object.prototype.hasOwnProperty.call(updates, key) && key !== 'id') {
+            const value = updates[key as keyof typeof updates];
+            const paramName = `param_${key}`;
+            
+            let type;
+            switch(typeof value) {
+                case 'string': type = sql.NVarChar(sql.MAX); break;
+                case 'number': type = sql.Int; break;
+                case 'boolean': type = sql.Bit; break;
+                case 'object': 
+                    if (value instanceof Date) type = sql.DateTime2;
+                    else type = sql.NVarChar(sql.MAX);
+                    break;
+                default: type = sql.NVarChar(sql.MAX);
+            }
+            
+            request.input(paramName, type, value);
+            updateFields.push(`${key} = @${paramName}`);
+        }
+    }
+    
+    if (updateFields.length === 0) {
+        const res = await pool.request().input('id', sql.Int, id).query('SELECT * FROM pipeline_executions WHERE id = @id');
+        return res.recordset[0];
+    }
+
+    const result = await request.query(`
+      UPDATE pipeline_executions 
+      SET ${updateFields.join(', ')}
+      OUTPUT INSERTED.*
+      WHERE id = @id
+    `);
+    return result.recordset[0];
+  }
+
+  async getLatestPipelineExecution(): Promise<PipelineExecution | undefined> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    const result = await request.query('SELECT TOP 1 * FROM pipeline_executions ORDER BY id DESC');
+    return result.recordset[0];
+  }
+
+  async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    
+    request.input('message', sql.NVarChar(sql.MAX), log.message);
+    request.input('level', sql.VarChar(50), log.level);
+    request.input('timestamp', sql.DateTime2, new Date());
+    request.input('executionId', sql.Int, log.executionId)
+    
+    const result = await request.query(`
+      INSERT INTO activity_logs (message, level, timestamp, executionId)
+      OUTPUT INSERTED.*
+      VALUES (@message, @level, @timestamp, @executionId)
+    `);
+    return result.recordset[0];
+  }
+  
+  async getRecentActivityLogs(limit = 20): Promise<ActivityLog[]> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    request.input('limit', sql.Int, limit);
+    const result = await request.query('SELECT TOP (@limit) * FROM activity_logs ORDER BY id DESC');
+    return result.recordset;
+  }
+
+  async clearActivityLogs(): Promise<void> {
+    const pool = await this.getPool();
+    const request = pool.request();
+    await request.query('DELETE FROM activity_logs');
+  }
+}
+Next, to ensure the data is prepared correctly before it's sent to the database, replace the content of server/pipeline.ts with this updated version:
+
+TypeScript
+
+import { storage } from "./storage";
+import { WebSocket } from "ws";
+
+interface AlgoliaJob {
+  data: {
+    jobID: string;
+    city: string;
+    country: string;
+    externalPath: string;
+    lastDayToApply: string;
+    title: string;
+    businessArea: string;
+    [key: string]: any; // Allow other properties
+  };
+  [key: string]: any; // Allow other properties
+}
+
+interface AlgoliaResponse {
+  hits: AlgoliaJob[];
+  page: number;
+  nbPages: number;
+  nbHits: number;
+}
+
+interface AILocationResponse {
+  city: string;
+  state: string;
+  country: string;
+}
+
+interface GeocodingResponse {
+  results: Array<{
+    geometry: {
+      location: {
+        lat: number;
+        lng: number;
+      };
+    };
+  }>;
+  status: string;
+}
+
+export class PipelineService {
+  private ws: WebSocket | null = null;
+  private currentExecutionId: number | null = null;
+  private processedJobs: any[] = [];
+
+  setWebSocket(ws: WebSocket) {
+    this.ws = ws;
+  }
+
+  private async sendProgress(data: any) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+    }
+  }
+
+  private async logActivity(message: string, level: 'info' | 'warning' | 'error' | 'success' = 'info') {
+    if (this.currentExecutionId) {
+      await storage.createActivityLog({
+        message,
+        level,
+        executionId: this.currentExecutionId,
+      });
+    }
+  }
+
+  async executePipeline(batchSize: number = 100): Promise<void> {
+    this.processedJobs = [];
+    const execution = await storage.createPipelineExecution({
+      status: 'running',
+      startTime: new Date(),
+      currentStep: 'Initializing...',
+    });
+
+    this.currentExecutionId = execution.id;
+
+    try {
+      await this.logActivity('Started manual pipeline execution', 'info');
+      await this.sendProgress({ type: 'status', status: 'running', step: 'Initializing...', progress: 0 });
+
+      // Step 1: Fetch jobs
+      await this.sendProgress({ type: 'status', step: 'Fetching jobs from Algolia...', progress: 10 });
+      const allJobs = await this.fetchJobsFromAlgolia();
+      const jobs = allJobs.slice(0, batchSize);
+      
+      await storage.updatePipelineExecution(execution.id, { totalJobs: jobs.length, currentStep: `Fetched ${jobs.length} jobs` });
+      await this.logActivity(`Fetched ${jobs.length} job listings`, 'success');
+      await this.sendProgress({ type: 'status', step: `Fetched ${jobs.length} jobs`, progress: 25, totalJobs: jobs.length });
+
+      // Step 2: Enrich jobs
+      const enrichedJobs = [];
+      for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i];
+        try {
+          const aiResult = await this.processLocationWithAI(job);
+          const coordinates = await this.getCoordinates(aiResult);
+          
+          const enrichedJob = { ...job, ...aiResult, ...coordinates };
+          enrichedJobs.push(enrichedJob);
+          
+          this.processedJobs.push({ originalData: job.data, aiProcessed: aiResult, coordinates, timestamp: new Date().toISOString() });
+
+          const progress = 25 + ((i + 1) / jobs.length) * 50;
+          await storage.updatePipelineExecution(execution.id, { processedJobs: i + 1, currentStep: `Processing locations (${i + 1}/${jobs.length})` });
+          await this.sendProgress({ type: 'status', step: `Processing locations (${i + 1}/${jobs.length})`, progress: Math.round(progress), processedJobs: i + 1 });
+          
+          await new Promise(resolve => setTimeout(resolve, 50));
+        } catch (error: any) {
+          await this.logActivity(`Error processing job ${job.data.jobID}: ${error.message}`, 'error');
+        }
+      }
+
+      // Step 3: Synchronize database
+      await this.sendProgress({ type: 'status', step: 'Synchronizing with database...', progress: 80 });
+      const { newJobs, removedJobs } = await this.synchronizeDatabase(enrichedJobs);
+
+      await storage.updatePipelineExecution(execution.id, { status: 'completed', endTime: new Date(), newJobs, removedJobs, currentStep: 'Completed successfully' });
+      await this.logActivity('Pipeline completed successfully', 'success');
+      await this.sendProgress({ type: 'complete', progress: 100, newJobs, removedJobs });
+
+    } catch (error: any) {
+      await storage.updatePipelineExecution(execution.id, { status: 'failed', endTime: new Date(), errorMessage: error.message, currentStep: 'Failed' });
+      await this.logActivity(`Pipeline failed: ${error.message}`, 'error');
+      await this.sendProgress({ type: 'error', message: error.message });
+      console.error("Pipeline execution failed:", error);
+    }
+  }
+
+  private async fetchJobsFromAlgolia(): Promise<AlgoliaJob[]> {
+    const APP_ID = 'LXMKS8ARA3';
+    const API_KEY = '933a2398c301661168ab0f240713ec3d';
+    const INDEX_NAME = 'GROUP_EN_dateDesc';
+    const allJobs: AlgoliaJob[] = [];
+    let page = 0;
+    let totalPages = 1;
+
+    while (page < totalPages) {
+      const response = await fetch(`https://${APP_ID}-dsn.algolia.net/1/indexes/${INDEX_NAME}/query`, {
+        method: 'POST',
+        headers: { 'X-Algolia-API-Key': API_KEY, 'X-Algolia-Application-Id': APP_ID, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ params: `filters=data.country:"United States"&hitsPerPage=100&page=${page}` }),
+      });
+      if (!response.ok) throw new Error(`Algolia API error: ${response.statusText}`);
+      
+      const data = await response.json() as AlgoliaResponse;
+      allJobs.push(...data.hits);
+      if (page === 0) totalPages = data.nbPages;
+      page++;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return allJobs;
+  }
+
+  private async processLocationWithAI(job: AlgoliaJob): Promise<AILocationResponse> {
+    const AZURE_ENDPOINT = "https://ai-acgenaidevtest540461206109.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2025-01-01-preview";
+    const API_KEY = process.env.AZURE_OPENAI_KEY || "3fcde4edd6fd43b4968a8e0e716c61e5";
+    
+    const prompt = `Extract city, state (full name), and country for the US location from the following job data. For US locations, providing the state is mandatory.
+      City: ${job.data.city}, Country: ${job.data.country}, Title: ${job.data.title}, URL: ${job.data.externalPath}
+      Respond in JSON format: {"city": "...", "state": "...", "country": "..."}`;
+
+    const response = await fetch(AZURE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': API_KEY },
+      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 150 }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Azure OpenAI API error: ${response.status} - ${errorText}`);
+    }
+    
+    const result = await response.json();
+    const content = result.choices[0]?.message?.content;
+    try {
+      return JSON.parse(content);
+    } catch {
+      return { city: job.data.city, state: '', country: job.data.country };
+    }
+  }
+
+  private async getCoordinates(location: AILocationResponse): Promise<{ latitude: string; longitude: string }> {
+    const API_KEY = process.env.GOOGLE_GEOCODING_API_KEY || "AIzaSyA3MC5XeDbmLA0Mgv0U7CJTycwQlEVaCzc";
+    const address = `${location.city}, ${location.state}, ${location.country}`;
+    const response = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${API_KEY}`);
+    
+    if (!response.ok) return { latitude: '0', longitude: '0' };
+    
+    const result: GeocodingResponse = await response.json();
+    if (result.status === 'OK' && result.results.length > 0) {
+      const { lat, lng } = result.results[0].geometry.location;
+      return { latitude: lat.toString(), longitude: lng.toString() };
+    }
+    return { latitude: '0', longitude: '0' };
+  }
+
+  private async synchronizeDatabase(enrichedJobs: any[]): Promise<{ newJobs: number; removedJobs: number }> {
+    const existingJobs = await storage.getAllJobPostings();
+    const existingJobIDs = new Set(existingJobs.map(j => j.jobID));
+    const newJobIDs = new Set(enrichedJobs.map(j => String(j.data.jobID)));
+
+    const jobsToRemove = existingJobs.filter(j => j.jobID && !newJobIDs.has(j.jobID));
+    const jobsToAdd = enrichedJobs.filter(j => !existingJobIDs.has(String(j.data.jobID)));
+
+    if (jobsToRemove.length > 0) {
+      await storage.deleteJobPostingsByJobIDs(jobsToRemove.map(j => j.jobID!).filter(Boolean));
+    }
+
+    for (const job of jobsToAdd) {
+      try {
+        const lat = parseFloat(job.latitude || '0');
+        const lng = parseFloat(job.longitude || '0');
+        const locationPoint = (lat !== 0 && lng !== 0 && !isNaN(lat) && !isNaN(lng)) ? `POINT(${lng} ${lat})` : null;
+        
+        const jobData = {
+          title: job.data.title,
+          description: job.data.description || null,
+          full_text: job.data.full_text || null,
+          url: job.data.externalPath,
+          company_name: job.data.company || null,
+          brand: Array.isArray(job.data.brand) ? job.data.brand.join(', ') : job.data.brand || null,
+          functional_area: job.data.businessArea || null,
+          work_type: job.data.workType || null,
+          location_city: job.city,
+          location_state: job.state,
+          state_abbrev: this.getStateAbbreviation(job.state),
+          zip_code: job.data.zipCode || null,
+          country: job.country,
+          latitude: job.latitude,
+          longitude: job.longitude,
+          location_point: locationPoint,
+          job_details_json: JSON.stringify({ ...job.data }),
+          status: "Active",
+          is_expired: false,
+          jobID: String(job.data.jobID),
+          lastDayToApply: job.data.lastDayToApply ? new Date(job.data.lastDayToApply) : null,
+          businessArea: job.data.businessArea,
+        };
+        await storage.createJobPosting(jobData);
+      } catch (error) {
+        console.error(`Failed to insert job ${job.data.jobID}:`, error);
+        await this.logActivity(`Failed to insert job ${job.data.jobID}: ${error.message}`, 'error');
+      }
+    }
+
+    return { newJobs: jobsToAdd.length, removedJobs: jobsToRemove.length };
+  }
+
+  getProcessedJobs(): any[] {
+    return this.processedJobs;
+  }
+
+  private getStateAbbreviation(stateName: string): string {
+    const stateMap: { [key: string]: string } = {
+      'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
+      'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
+      'Hawaii': 'HI', 'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA',
+      'Kansas': 'KS', 'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+      'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS', 'Missouri': 'MO',
+      'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+      'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH',
+      'Oklahoma': 'OK', 'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+      'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT', 'Vermont': 'VT',
+      'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY',
+      'District of Columbia': 'DC'
+    };
+    return stateMap[stateName] || '';
+  }
+}
+
+export const pipelineService = new PipelineService();
