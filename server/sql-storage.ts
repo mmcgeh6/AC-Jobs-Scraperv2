@@ -36,14 +36,7 @@ function parseJdbcConnectionString(jdbcUrl: string) {
   };
 }
 
-const getConnectionString = () => {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    console.error('DATABASE_URL environment variable is not set');
-    console.error('Available environment variables:', Object.keys(process.env).filter(key => key.startsWith('DATABASE')));
-  }
-  return connectionString;
-};
+const connectionString = process.env.DATABASE_URL;
 
 let pool: sql.ConnectionPool | null = null;
 
@@ -52,7 +45,6 @@ async function initializeConnection(): Promise<sql.ConnectionPool> {
     return pool;
   }
 
-  const connectionString = getConnectionString();
   if (!connectionString) {
     throw new Error("DATABASE_URL is not defined in environment variables.");
   }
@@ -95,36 +87,15 @@ export class SQLStorage implements IStorage {
   async getAllJobPostings(): Promise<JobPosting[]> {
     const pool = await this.getPool();
     const request = pool.request();
-    
-    // First, let's check what columns actually exist in the table
-    try {
-      console.log('=== CHECKING DATABASE SCHEMA ===');
-      const schemaQuery = `
-        SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH 
-        FROM INFORMATION_SCHEMA.COLUMNS 
-        WHERE TABLE_NAME = 'job_postings' 
-        ORDER BY ORDINAL_POSITION
-      `;
-      const schemaResult = await request.query(schemaQuery);
-      console.log('Database columns found:');
-      schemaResult.recordset.forEach(col => {
-        console.log(`  - ${col.COLUMN_NAME}: ${col.DATA_TYPE} (nullable: ${col.IS_NULLABLE})`);
-      });
-      console.log('=== END SCHEMA CHECK ===');
-      
-      const result = await request.query('SELECT * FROM job_postings ORDER BY id DESC OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY');
-      return result.recordset;
-    } catch (error) {
-      console.error('Failed to query job_postings table:', error);
-      return [];
-    }
+    const result = await request.query('SELECT * FROM job_postings ORDER BY id DESC');
+    return result.recordset;
   }
 
   async getJobPostingByJobID(jobID: string): Promise<JobPosting | undefined> {
     const pool = await this.getPool();
     const request = pool.request();
-    request.input('jobID', sql.VarChar, jobID);
-    const result = await request.query('SELECT * FROM job_postings WHERE jobID = @jobID');
+    request.input('job_id', sql.VarChar, jobID);
+    const result = await request.query('SELECT * FROM job_postings WHERE job_id = @job_id');
     return result.recordset[0];
   }
 
