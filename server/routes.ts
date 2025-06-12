@@ -92,6 +92,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete('/api/jobs/clear', async (req, res) => {
+    try {
+      console.log('🧹 Clearing all job postings...');
+      const jobs = await storage.getAllJobPostings();
+      for (const job of jobs) {
+        await storage.deleteJobPosting(job.jobId);
+      }
+      console.log('✅ Cleared all job postings');
+      res.json({ message: 'All job postings cleared successfully' });
+    } catch (error: any) {
+      console.error('❌ Failed to clear jobs:', error);
+      res.status(500).json({ message: 'Failed to clear jobs', error: error.message });
+    }
+  });
+
   app.post('/api/database/initialize', async (req, res) => {
     try {
       console.log('Creating database tables...');
