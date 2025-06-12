@@ -7,15 +7,18 @@ import { pipelineService } from "./pipeline";
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
-  // WebSocket server for real-time updates
-  const wss = new WebSocketServer({ server: httpServer });
+  // WebSocket server for real-time updates on a specific path
+  const wss = new WebSocketServer({ 
+    server: httpServer,
+    path: '/api/ws'
+  });
 
   wss.on('connection', (ws) => {
-    console.log('WebSocket client connected');
+    console.log('Pipeline WebSocket client connected');
     pipelineService.setWebSocket(ws);
 
     ws.on('close', () => {
-      console.log('WebSocket client disconnected');
+      console.log('Pipeline WebSocket client disconnected');
     });
   });
 
@@ -28,7 +31,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ message: 'Pipeline started successfully' });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to start pipeline:', error);
       res.status(500).json({ message: 'Failed to start pipeline', error: error.message });
     }
@@ -38,7 +41,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const latestExecution = await storage.getLatestPipelineExecution();
       res.json(latestExecution || null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to get pipeline status:', error);
       res.status(500).json({ message: 'Failed to get pipeline status', error: error.message });
     }
@@ -48,7 +51,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const logs = await storage.getRecentActivityLogs(20);
       res.json(logs);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to get activity logs:', error);
       res.status(500).json({ message: 'Failed to get activity logs', error: error.message });
     }
@@ -58,7 +61,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.clearActivityLogs();
       res.json({ message: 'Activity logs cleared successfully' });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to clear activity logs:', error);
       res.status(500).json({ message: 'Failed to clear activity logs', error: error.message });
     }
@@ -76,7 +79,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       res.json(status);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to get system status:', error);
       res.status(500).json({ message: 'Failed to get system status', error: error.message });
     }

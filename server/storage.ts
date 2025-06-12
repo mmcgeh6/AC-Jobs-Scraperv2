@@ -39,6 +39,11 @@ export class MemStorage implements IStorage {
     const newJob: JobPosting = {
       ...job,
       id: this.currentJobId++,
+      parsedCity: job.parsedCity || null,
+      parsedState: job.parsedState || null,
+      parsedCountry: job.parsedCountry || null,
+      latitude: job.latitude || null,
+      longitude: job.longitude || null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -58,6 +63,13 @@ export class MemStorage implements IStorage {
     const newExecution: PipelineExecution = {
       ...execution,
       id: this.currentExecutionId++,
+      endTime: execution.endTime || null,
+      totalJobs: execution.totalJobs || null,
+      processedJobs: execution.processedJobs || null,
+      newJobs: execution.newJobs || null,
+      removedJobs: execution.removedJobs || null,
+      errorMessage: execution.errorMessage || null,
+      currentStep: execution.currentStep || null,
     };
     this.pipelineExecutions.set(newExecution.id, newExecution);
     return newExecution;
@@ -83,6 +95,7 @@ export class MemStorage implements IStorage {
       ...log,
       id: this.currentLogId++,
       timestamp: new Date(),
+      executionId: log.executionId || null,
     };
     this.activityLogs.unshift(newLog);
     // Keep only last 100 logs
