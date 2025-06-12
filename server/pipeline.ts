@@ -178,8 +178,13 @@ export class PipelineService {
       });
 
       console.log('🔧 About to call synchronizeDatabase with', enrichedJobs.length, 'enriched jobs');
-      const { newJobs, removedJobs } = await this.synchronizeDatabase(enrichedJobs);
-      console.log('🔧 synchronizeDatabase returned:', { newJobs, removedJobs });
+      try {
+        const { newJobs, removedJobs } = await this.synchronizeDatabase(enrichedJobs);
+        console.log('🔧 synchronizeDatabase returned:', { newJobs, removedJobs });
+      } catch (syncError) {
+        console.error('🔧 synchronizeDatabase failed:', syncError);
+        throw syncError;
+      }
 
       await storage.updatePipelineExecution(execution.id, {
         status: 'completed',
