@@ -504,17 +504,28 @@ Use the job context and URL to determine the most accurate location.`;
 
   private async findCityZipcode(city: string, state: string): Promise<string> {
     try {
-      // Try searching for postal codes in the city area
-      const searchQueries = [
-        `${city} ${state} postal code`,
-        `${city} ${this.getStateAbbreviation(state)} zipcode`,
-        `downtown ${city} ${this.getStateAbbreviation(state)}`,
-        `${city} city center ${this.getStateAbbreviation(state)}`
+      // Strategy 1: Try reverse geocoding with nearby coordinates
+      const coordinates = await this.getCityCoordinates(city, state);
+      if (coordinates.lat && coordinates.lng) {
+        const reverseZipcode = await this.reverseGeocodeForZipcode(coordinates.lat, coordinates.lng);
+        if (reverseZipcode) {
+          console.log(`📮 Found zipcode via reverse geocoding for ${city}, ${state}: ${reverseZipcode}`);
+          return reverseZipcode;
+        }
+      }
+
+      // Strategy 2: Try specific address patterns in the city
+      const addressPatterns = [
+        `100 Main Street, ${city}, ${this.getStateAbbreviation(state)}`,
+        `1 ${city} Ave, ${city}, ${this.getStateAbbreviation(state)}`,
+        `City Hall, ${city}, ${this.getStateAbbreviation(state)}`,
+        `${city} Town Center, ${city}, ${this.getStateAbbreviation(state)}`,
+        `Downtown ${city}, ${this.getStateAbbreviation(state)}`
       ];
 
-      for (const query of searchQueries) {
+      for (const address of addressPatterns) {
         try {
-          const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${process.env.GOOGLE_GEOCODING_API_KEY}`;
+          const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_GEOCODING_API_KEY}`;
           const response = await fetch(url);
           
           if (!response.ok) continue;
@@ -522,27 +533,92 @@ Use the job context and URL to determine the most accurate location.`;
           const result: GeocodingResponse = await response.json();
           
           if (result.status === 'OK' && result.results.length > 0) {
-            // Look through all results for one with a postal code
+            const postalCode = result.results[0].address_components.find(
+              component => component.types.includes('postal_code')
+            );
+            
+            if (postalCode?.long_name) {
+              console.log(`📮 Found zipcode for ${city}, ${state}: ${postalCode.long_name} (via "${address}")`);
+              return postalCode.long_name;
+            }
+          }
+        } catch (error) {
+          console.warn(`Error in address pattern search for "${address}":`, error);
+        }
+      }
+      
+      console.warn(`📭 No zipcode found for ${city}, ${state} after all fallback attempts`);
+      return '';
+    } catch (error) {
+      console.warn(`Error in findCityZipcode for ${city}, ${state}:`, error);
+      return '';
+    }
+  }
+
+  private async getCityCoordinates(city: string, state: string): Promise<{ lat: number; lng: number }> {
+    try {
+      const address = `${city}, ${this.getStateAbbreviation(state)}, USA`;
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_GEOCODING_API_KEY}`;
+      const response = await fetch(url);
+      
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const result: GeocodingResponse = await response.json();
+      
+      if (result.status === 'OK' && result.results.length > 0) {
+        return result.results[0].geometry.location;
+      }
+      
+      return { lat: 0, lng: 0 };
+    } catch (error) {
+      console.warn(`Error getting coordinates for ${city}, ${state}:`, error);
+      return { lat: 0, lng: 0 };
+    }
+  }
+
+  private async reverseGeocodeForZipcode(lat: number, lng: number): Promise<string> {
+    try {
+      // Try multiple nearby points to find a postal code
+      const offsets = [
+        { lat: 0, lng: 0 },           // Center
+        { lat: 0.01, lng: 0 },        // North
+        { lat: -0.01, lng: 0 },       // South
+        { lat: 0, lng: 0.01 },        // East
+        { lat: 0, lng: -0.01 },       // West
+        { lat: 0.005, lng: 0.005 },   // Northeast
+        { lat: -0.005, lng: -0.005 }  // Southwest
+      ];
+
+      for (const offset of offsets) {
+        try {
+          const testLat = lat + offset.lat;
+          const testLng = lng + offset.lng;
+          const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${testLat},${testLng}&key=${process.env.GOOGLE_GEOCODING_API_KEY}`;
+          
+          const response = await fetch(url);
+          if (!response.ok) continue;
+          
+          const result: GeocodingResponse = await response.json();
+          
+          if (result.status === 'OK' && result.results.length > 0) {
             for (const geoResult of result.results) {
               const postalCode = geoResult.address_components.find(
                 component => component.types.includes('postal_code')
               );
               
               if (postalCode?.long_name) {
-                console.log(`📮 Found fallback zipcode for ${city}, ${state}: ${postalCode.long_name} (via "${query}")`);
                 return postalCode.long_name;
               }
             }
           }
         } catch (error) {
-          console.warn(`Error in zipcode fallback search for "${query}":`, error);
+          continue;
         }
       }
       
-      console.warn(`📭 No zipcode found for ${city}, ${state} after fallback attempts`);
       return '';
     } catch (error) {
-      console.warn(`Error in findCityZipcode for ${city}, ${state}:`, error);
+      console.warn(`Error in reverse geocoding:`, error);
       return '';
     }
   }
