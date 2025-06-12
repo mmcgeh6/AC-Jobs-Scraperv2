@@ -1,4 +1,5 @@
-import { jobPostings, pipelineExecutions, activityLogs, type JobPosting, type InsertJobPosting, type PipelineExecution, type InsertPipelineExecution, type ActivityLog, type InsertActivityLog } from "@shared/schema";
+import { type JobPosting, type InsertJobPosting, type PipelineExecution, type InsertPipelineExecution, type ActivityLog, type InsertActivityLog } from "@shared/schema";
+import { AzureSQLStorage } from './azure-sql-storage';
 
 export interface IStorage {
   // Job postings

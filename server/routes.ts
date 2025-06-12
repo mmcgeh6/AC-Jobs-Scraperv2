@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import { storage } from "./storage";
-import { pipelineService } from "./pipeline";
+import { azurePipelineService } from "./azure-pipeline";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -15,7 +15,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   wss.on('connection', (ws) => {
     console.log('Pipeline WebSocket client connected');
-    pipelineService.setWebSocket(ws);
+    azurePipelineService.setWebSocket(ws);
 
     ws.on('close', () => {
       console.log('Pipeline WebSocket client disconnected');
