@@ -476,7 +476,7 @@ REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
         full_text: job.data.full_text || null,
         url: job.data.externalPath,
         company_name: job.data.company || null,
-        brand: job.data.brand || null,
+        brand: Array.isArray(job.data.brand) ? job.data.brand.join(', ') : job.data.brand || null,
         functional_area: job.data.businessArea || null,
         work_type: job.data.workType || null,
         location_city: job.city,

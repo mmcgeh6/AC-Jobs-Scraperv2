@@ -105,21 +105,42 @@ export class SQLStorage implements IStorage {
     const pool = await this.getPool();
     const request = pool.request();
     
+    // Map the job object properties to match the database schema
     request.input('jobID', sql.VarChar, job.jobID);
     request.input('title', sql.VarChar, job.title);
-    request.input('businessArea', sql.VarChar, job.businessArea);
-    request.input('city', sql.VarChar, job.city);
-    request.input('state', sql.VarChar, job.state);
+    request.input('description', sql.VarChar, job.description);
+    request.input('full_text', sql.VarChar, job.full_text);
+    request.input('url', sql.VarChar, job.url);
+    request.input('company_name', sql.VarChar, job.company_name);
+    request.input('brand', sql.VarChar, job.brand);
+    request.input('functional_area', sql.VarChar, job.functional_area);
+    request.input('work_type', sql.VarChar, job.work_type);
+    request.input('location_city', sql.VarChar, job.location_city);
+    request.input('location_state', sql.VarChar, job.location_state);
+    request.input('state_abbrev', sql.VarChar, job.state_abbrev);
+    request.input('zip_code', sql.VarChar, job.zip_code);
     request.input('country', sql.VarChar, job.country);
-    request.input('externalPath', sql.VarChar, job.externalPath);
-    request.input('lastDayToApply', sql.VarChar, job.lastDayToApply);
-    request.input('latitude', sql.VarChar, job.latitude);
-    request.input('longitude', sql.VarChar, job.longitude);
+    request.input('latitude', sql.Decimal(10, 8), job.latitude ? parseFloat(job.latitude) : null);
+    request.input('longitude', sql.Decimal(11, 8), job.longitude ? parseFloat(job.longitude) : null);
+    request.input('location_point', sql.VarChar, job.location_point);
+    request.input('job_details_json', sql.VarChar, job.job_details_json);
+    request.input('status', sql.VarChar, job.status || 'Active');
+    request.input('is_expired', sql.Bit, job.is_expired || false);
+    request.input('lastDayToApply', sql.DateTime, job.lastDayToApply);
+    request.input('businessArea', sql.VarChar, job.businessArea);
     
     const result = await request.query(`
-      INSERT INTO job_postings (jobID, title, businessArea, city, state, country, externalPath, lastDayToApply, latitude, longitude)
+      INSERT INTO job_postings (
+        jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
+        location_city, location_state, state_abbrev, zip_code, country, latitude, longitude,
+        location_point, job_details_json, status, is_expired, lastDayToApply, businessArea
+      )
       OUTPUT INSERTED.*
-      VALUES (@jobID, @title, @businessArea, @city, @state, @country, @externalPath, @lastDayToApply, @latitude, @longitude)
+      VALUES (
+        @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
+        @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude,
+        @location_point, @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
+      )
     `);
     return result.recordset[0];
   }
