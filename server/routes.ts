@@ -28,7 +28,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { batchSize = 100 } = req.body;
       
       // Start pipeline execution asynchronously with batch size
-      pipelineService.executePipeline(batchSize).catch(error => {
+      azurePipelineService.executePipeline(batchSize).catch(error => {
         console.error('Pipeline execution failed:', error);
       });
 
@@ -71,7 +71,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/pipeline/processed-jobs', async (req, res) => {
     try {
-      const processedJobs = pipelineService.getProcessedJobs();
+      const processedJobs = azurePipelineService.getProcessedJobs();
       res.json(processedJobs);
     } catch (error: any) {
       console.error('Failed to get processed jobs:', error);
