@@ -203,47 +203,37 @@ export class AzurePipelineService {
   }
 
   private async fetchJobsFromAlgolia(): Promise<AlgoliaJob[]> {
-    const allJobs: AlgoliaJob[] = [];
-    let page = 0;
-    let hasMore = true;
+    // For testing: fetch only 3 jobs total
+    const url = `https://${process.env.ALGOLIA_APPLICATION_ID}.algolia.net/1/indexes/GROUP_EN_dateDesc/query`;
+    const body = {
+      params: `filters=data.country:"United States"&hitsPerPage=3&page=0&query=`
+    };
 
-    while (hasMore) {
-      const url = `https://${process.env.ALGOLIA_APPLICATION_ID}.algolia.net/1/indexes/GROUP_EN_dateDesc/query`;
-      const body = {
-        params: `filters=data.country:"United States"&hitsPerPage=3&page=${page}&query=`
-      };
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-Algolia-API-Key': process.env.ALGOLIA_API_KEY!,
+          'X-Algolia-Application-Id': process.env.ALGOLIA_APPLICATION_ID!,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
 
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'X-Algolia-API-Key': process.env.ALGOLIA_API_KEY!,
-            'X-Algolia-Application-Id': process.env.ALGOLIA_APPLICATION_ID!,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Algolia API error: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json() as AlgoliaResponse;
-        
-        allJobs.push(...data.hits);
-        
-        hasMore = data.page < data.nbPages - 1;
-        page++;
-
-        console.log(`📄 Fetched page ${page}/${data.nbPages} with ${data.hits.length} jobs`);
-        
-      } catch (error) {
-        console.error(`Failed to fetch page ${page}:`, error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`Algolia API error: ${response.status} ${response.statusText}`);
       }
-    }
 
-    return allJobs;
+      const data = await response.json() as AlgoliaResponse;
+      
+      console.log(`📄 Fetched ${data.hits.length} jobs for testing`);
+      
+      return data.hits;
+      
+    } catch (error) {
+      console.error(`Failed to fetch jobs:`, error);
+      throw error;
+    }
   }
 
   private async processLocationWithAI(job: AlgoliaJob): Promise<AILocationResponse> {
