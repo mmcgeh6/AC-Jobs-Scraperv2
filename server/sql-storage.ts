@@ -36,7 +36,14 @@ function parseJdbcConnectionString(jdbcUrl: string) {
   };
 }
 
-const connectionString = process.env.DATABASE_URL;
+const getConnectionString = () => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    console.error('DATABASE_URL environment variable is not set');
+    console.error('Available environment variables:', Object.keys(process.env).filter(key => key.startsWith('DATABASE')));
+  }
+  return connectionString;
+};
 
 let pool: sql.ConnectionPool | null = null;
 
@@ -45,6 +52,7 @@ async function initializeConnection(): Promise<sql.ConnectionPool> {
     return pool;
   }
 
+  const connectionString = getConnectionString();
   if (!connectionString) {
     throw new Error("DATABASE_URL is not defined in environment variables.");
   }
@@ -95,7 +103,7 @@ export class SQLStorage implements IStorage {
     const pool = await this.getPool();
     const request = pool.request();
     request.input('jobID', sql.VarChar, jobID);
-    const result = await request.query('SELECT * FROM job_postings WHERE jobID = @jobID');
+    const result = await request.query('SELECT * FROM job_postings WHERE job_id = @jobID');
     return result.recordset[0];
   }
 
@@ -134,9 +142,9 @@ export class SQLStorage implements IStorage {
 
       const insertQuery = `
         INSERT INTO job_postings (
-          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
+          job_id, title, description, full_text, url, company_name, brand, functional_area, work_type,
           location_city, location_state, state_abbrev, zip_code, country, latitude, longitude, location_point,
-          job_details_json, status, is_expired, lastDayToApply, businessArea
+          job_details_json, status, is_expired, last_day_to_apply, business_area
         )
         OUTPUT INSERTED.*
         VALUES (
