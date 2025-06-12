@@ -217,17 +217,19 @@ export class AzureSQLStorage implements IStorage {
       request.input('description', sql.NVarChar, validatedJob.description);
       request.input('companyName', sql.NVarChar, validatedJob.companyName);
 
-      // Create location point if coordinates exist
-      let locationPointSQL = 'NULL';
-      if (job.latitude && job.longitude) {
-        locationPointSQL = `geography::Point(${parseFloat(job.latitude)}, ${parseFloat(job.longitude)}, 4326)`;
+      // Create location point if coordinates exist - store as text
+      if (validatedJob.latitude && validatedJob.longitude) {
+        const locationPoint = `POINT(${validatedJob.longitude} ${validatedJob.latitude})`;
+        request.input('locationPoint', sql.NVarChar, locationPoint);
+      } else {
+        request.input('locationPoint', sql.NVarChar, null);
       }
 
       const insertSQL = `
         INSERT INTO job_posting_listings 
         (job_id, job_url, title, city, state, country, latitude, longitude, location_point, description, company_name)
         OUTPUT INSERTED.*
-        VALUES (@jobId, @jobUrl, @title, @city, @state, @country, @latitude, @longitude, ${locationPointSQL}, @description, @companyName)
+        VALUES (@jobId, @jobUrl, @title, @city, @state, @country, @latitude, @longitude, @locationPoint, @description, @companyName)
       `;
 
       const result = await request.query(insertSQL);

@@ -339,6 +339,8 @@ If state/province cannot be determined, use null. Ensure proper capitalization.`
 
     // For initial data load, directly insert all jobs
     let newJobsCount = 0;
+    const jobsToRemove: any[] = []; // Initialize for future sync operations
+
     for (const job of enrichedJobs) {
       try {
         await storage.createJobPosting(job);
