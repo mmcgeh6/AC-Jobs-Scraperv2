@@ -354,32 +354,18 @@ If state/province cannot be determined, use null. Ensure proper capitalization.`
   private async synchronizeDatabase(enrichedJobs: any[]): Promise<{ newJobs: number; removedJobs: number }> {
     await this.sendProgress({ step: 'Synchronizing with database', progress: 90 });
 
-    // Get current jobs from database
-    const currentJobs = await storage.getAllJobPostings();
-    const currentJobIDs = new Set(currentJobs.map(job => job.jobId));
-    
-    // Get new job IDs from this batch
-    const newJobIDs = new Set(enrichedJobs.map(job => job.jobId));
-    
-    // Find jobs to remove (exist in DB but not in current batch)
-    const jobsToRemove = currentJobs.filter(job => !newJobIDs.has(job.jobId));
-    
-    // Delete removed jobs
-    if (jobsToRemove.length > 0) {
-      const jobIDsToDelete = jobsToRemove.map(job => job.jobId);
-      await storage.deleteJobPostingsByJobIDs(jobIDsToDelete);
-      await this.logActivity(`Removed ${jobsToRemove.length} outdated job postings`, 'info');
-    }
-
-    // Add new jobs to database
+    // For initial data load, directly insert all jobs
     let newJobsCount = 0;
     for (const job of enrichedJobs) {
       try {
         await storage.createJobPosting(job);
         newJobsCount++;
       } catch (error) {
-        console.error(`Failed to create job posting for ${job.jobId}:`, error);
-        await this.logActivity(`Failed to save job: ${job.title} - ${error.message}`, 'error');
+        // Handle duplicate key errors gracefully (job already exists)
+        if (!error.message.includes('UNIQUE KEY constraint')) {
+          console.error(`Failed to create job posting for ${job.jobId}:`, error);
+          await this.logActivity(`Failed to save job: ${job.title} - ${error.message}`, 'error');
+        }
       }
     }
 
