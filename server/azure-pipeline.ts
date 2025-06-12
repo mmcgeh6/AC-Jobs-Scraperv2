@@ -215,12 +215,9 @@ export class AzurePipelineService {
     let hasMore = true;
 
     while (hasMore) {
-      const url = `https://${process.env.ALGOLIA_APPLICATION_ID}-dsn.algolia.net/1/indexes/*/queries`;
+      const url = `https://${process.env.ALGOLIA_APPLICATION_ID}.algolia.net/1/indexes/GROUP_EN_dateDesc/query`;
       const body = {
-        requests: [{
-          indexName: "job_listings",
-          params: `query=&page=${page}&hitsPerPage=1000`
-        }]
+        params: `filters=data.country:"United States"&hitsPerPage=1000&page=${page}&query=`
       };
 
       try {
@@ -238,15 +235,14 @@ export class AzurePipelineService {
           throw new Error(`Algolia API error: ${response.status} ${response.statusText}`);
         }
 
-        const data = await response.json();
-        const result = data.results[0] as AlgoliaResponse;
+        const data = await response.json() as AlgoliaResponse;
         
-        allJobs.push(...result.hits);
+        allJobs.push(...data.hits);
         
-        hasMore = result.page < result.nbPages - 1;
+        hasMore = data.page < data.nbPages - 1;
         page++;
 
-        console.log(`📄 Fetched page ${page}/${result.nbPages} with ${result.hits.length} jobs`);
+        console.log(`📄 Fetched page ${page}/${data.nbPages} with ${data.hits.length} jobs`);
         
       } catch (error) {
         console.error(`Failed to fetch page ${page}:`, error);
