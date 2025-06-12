@@ -69,7 +69,7 @@ export class AzurePipelineService {
   }
 
   async executePipeline(batchSize: number = 100): Promise<void> {
-    console.log('🚀 Starting Azure pipeline execution...');
+    console.log(`🚀 Starting Azure pipeline execution with batch size: ${batchSize}`);
     
     const execution = await storage.createPipelineExecution({
       status: 'running',
@@ -87,115 +87,192 @@ export class AzurePipelineService {
         progress: 0,
       });
 
-      await this.logActivity('Pipeline execution started', 'info');
+      await this.logActivity(`Pipeline execution started with batch size: ${batchSize}`, 'info');
 
       // Step 1: Fetch jobs from Algolia
-      await this.sendProgress({ step: 'Fetching jobs from Algolia', progress: 10 });
-      const jobs = await this.fetchJobsFromAlgolia();
-      console.log(`📥 Fetched ${jobs.length} jobs from Algolia`);
+      await this.sendProgress({ 
+        type: 'status',
+        status: 'Fetching jobs from Algolia',
+        step: 'Fetching jobs from Algolia', 
+        progress: 10 
+      });
+      
+      const allJobs = await this.fetchJobsFromAlgolia();
+      
+      // Apply batch size limit immediately
+      const jobsToProcess = allJobs.slice(0, batchSize);
+      console.log(`📊 Limited to ${jobsToProcess.length} jobs (batch size: ${batchSize} of ${allJobs.length} total)`);
 
       await storage.updatePipelineExecution(execution.id, {
-        totalJobs: jobs.length,
-        currentStep: 'Processing jobs with AI',
+        totalJobs: jobsToProcess.length,
+        currentStep: 'Comparing with existing data',
       });
 
-      // Step 2: Process jobs with AI and geocoding
+      // Step 2: Compare Algolia job IDs with existing SQL table records
       await this.sendProgress({ 
-        step: 'Processing jobs with AI and geocoding', 
-        progress: 30,
-        totalJobs: jobs.length,
+        type: 'status',
+        status: 'Comparing with existing database records',
+        step: 'Comparing with existing data', 
+        progress: 20,
+        totalJobs: jobsToProcess.length,
       });
 
+      const existingJobs = await storage.getAllJobPostings();
+      const existingJobIds = new Set(existingJobs.map(job => job.jobId));
+      const algoliaJobIds = new Set(jobsToProcess.map(job => String(job.data.jobID)));
+
+      // Step 3: Identify new jobs that need processing
+      const newJobs = jobsToProcess.filter(job => !existingJobIds.has(String(job.data.jobID)));
+      
+      // Step 4: Identify obsolete jobs that need deletion
+      const jobsToDelete = existingJobs.filter(job => !algoliaJobIds.has(job.jobId));
+
+      console.log(`📋 Found ${newJobs.length} new jobs to process, ${jobsToDelete.length} obsolete jobs to delete`);
+      await this.logActivity(`Found ${newJobs.length} new jobs, ${jobsToDelete.length} obsolete jobs`, 'info');
+
+      // Step 5: Delete obsolete jobs from SQL table
+      if (jobsToDelete.length > 0) {
+        await this.sendProgress({ 
+          type: 'status',
+          status: `Removing ${jobsToDelete.length} obsolete jobs`,
+          step: 'Removing obsolete jobs', 
+          progress: 30,
+          totalJobs: jobsToProcess.length,
+        });
+
+        for (const jobToDelete of jobsToDelete) {
+          try {
+            await storage.deleteJobPosting(jobToDelete.jobId);
+            console.log(`🗑️ Deleted obsolete job: ${jobToDelete.title} (${jobToDelete.jobId})`);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.warn(`Failed to delete job ${jobToDelete.jobId}:`, error);
+            await this.logActivity(`Failed to delete obsolete job ${jobToDelete.title}: ${errorMessage}`, 'warning');
+          }
+        }
+        await this.logActivity(`Removed ${jobsToDelete.length} obsolete jobs from database`, 'success');
+      }
+
+      // Step 6: Process new jobs with Azure OpenAI and Google Geocoding
       const enrichedJobs = [];
       let processedCount = 0;
 
-      for (const job of jobs) {
-        try {
-          // Process location with AI
-          const aiLocation = await this.processLocationWithAI(job);
-          
-          // Get coordinates from Google Geocoding
-          const coordinates = await this.getCoordinates(aiLocation);
+      if (newJobs.length > 0) {
+        await this.sendProgress({ 
+          type: 'status',
+          status: `Processing ${newJobs.length} new jobs with AI`,
+          step: 'Processing new jobs with AI', 
+          progress: 40,
+          totalJobs: newJobs.length,
+        });
 
-          // Create enriched job object matching Azure SQL schema
-          const enrichedJob = {
-            jobId: String(job.data.jobID),
-            jobUrl: job.data.externalPath,
-            title: job.data.title,
-            city: aiLocation.city,
-            state: aiLocation.state,
-            country: aiLocation.country,
-            latitude: coordinates.latitude,
-            longitude: coordinates.longitude,
-            locationPoint: coordinates.latitude && coordinates.longitude 
-              ? `POINT(${coordinates.longitude} ${coordinates.latitude})` 
-              : null,
-            description: job.data.businessArea || null,
-            companyName: job.data.brand || job.data.company || null,
-          };
+        for (const job of newJobs) {
+          try {
+            // Process location with Azure OpenAI
+            const aiLocation = await this.processLocationWithAI(job);
+            
+            // Get coordinates from Google Geocoding
+            const coordinates = await this.getCoordinates(aiLocation);
 
-          enrichedJobs.push(enrichedJob);
-          processedCount++;
+            // Create enriched job object
+            const enrichedJob = {
+              jobId: String(job.data.jobID),
+              jobUrl: job.data.externalPath,
+              title: job.data.title,
+              city: aiLocation.city,
+              state: aiLocation.state,
+              country: aiLocation.country,
+              latitude: coordinates.latitude,
+              longitude: coordinates.longitude,
+              locationPoint: coordinates.latitude && coordinates.longitude 
+                ? `POINT(${coordinates.longitude} ${coordinates.latitude})` 
+                : null,
+              description: job.data.businessArea || null,
+              companyName: job.data.brand || job.data.company || null,
+            };
 
-          // Send progress update
-          const progress = 30 + (processedCount / jobs.length) * 50;
-          await this.sendProgress({
-            step: 'Processing jobs with AI and geocoding',
-            progress: Math.round(progress),
-            processedJobs: processedCount,
-            totalJobs: jobs.length,
-          });
+            enrichedJobs.push(enrichedJob);
+            processedCount++;
 
-          await storage.updatePipelineExecution(execution.id, {
-            processedJobs: processedCount,
-          });
+            // Send progress update
+            const progress = 40 + (processedCount / newJobs.length) * 40;
+            await this.sendProgress({
+              type: 'status',
+              status: `Processed ${processedCount}/${newJobs.length} new jobs`,
+              step: 'Processing new jobs with AI',
+              progress: Math.round(progress),
+              processedJobs: processedCount,
+              totalJobs: newJobs.length,
+            });
 
-        } catch (error) {
-          console.error(`Failed to process job ${job.data.jobID}:`, error);
-          await this.logActivity(`Failed to process job ${job.data.title}: ${error.message}`, 'error');
-          processedCount++;
+          } catch (error) {
+            console.error(`Failed to process job ${job.data.jobID}:`, error);
+            await this.logActivity(`Failed to process job ${job.data.title}: ${error.message}`, 'error');
+            processedCount++;
+          }
         }
+
+        // Step 7: Add new enriched jobs to SQL table
+        await this.sendProgress({ 
+          type: 'status',
+          status: `Adding ${enrichedJobs.length} new jobs to database`,
+          step: 'Adding new jobs to database', 
+          progress: 85,
+          totalJobs: enrichedJobs.length,
+        });
+
+        let addedCount = 0;
+        for (const enrichedJob of enrichedJobs) {
+          try {
+            await storage.createJobPosting(enrichedJob);
+            addedCount++;
+          } catch (error) {
+            console.warn(`Failed to save job ${enrichedJob.jobId}:`, error);
+            await this.logActivity(`Failed to save job ${enrichedJob.title}: ${error.message}`, 'warning');
+          }
+        }
+        await this.logActivity(`Added ${addedCount} new job postings to database`, 'success');
       }
 
-      // Step 3: Synchronize with database
-      const syncResult = await this.synchronizeDatabase(enrichedJobs);
+      // Store processed jobs for API access
+      this.processedJobs = enrichedJobs;
 
       // Complete execution
       await storage.updatePipelineExecution(execution.id, {
         status: 'completed',
         endTime: new Date(),
-        newJobs: syncResult.newJobs,
-        removedJobs: syncResult.removedJobs,
+        processedJobs: enrichedJobs.length,
+        newJobs: enrichedJobs.length,
+        removedJobs: jobsToDelete.length,
         currentStep: 'Completed',
       });
 
-      await this.logActivity('Pipeline execution completed successfully', 'success');
-
       await this.sendProgress({
         type: 'complete',
-        message: 'Pipeline completed successfully',
-        totalJobs: jobs.length,
-        processedJobs: processedCount,
-        newJobs: syncResult.newJobs,
-        removedJobs: syncResult.removedJobs,
+        message: `Pipeline completed successfully. Added ${enrichedJobs.length} new jobs, removed ${jobsToDelete.length} obsolete jobs.`,
+        totalJobs: jobsToProcess.length,
+        processedJobs: enrichedJobs.length,
+        newJobs: enrichedJobs.length,
+        removedJobs: jobsToDelete.length,
       });
 
-      this.processedJobs = enrichedJobs;
+      await this.logActivity(`Pipeline execution completed successfully. Added ${enrichedJobs.length} new jobs, removed ${jobsToDelete.length} obsolete jobs.`, 'success');
 
     } catch (error) {
       console.error('Pipeline execution failed:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       
       await storage.updatePipelineExecution(execution.id, {
         status: 'failed',
         endTime: new Date(),
-        errorMessage: error.message,
+        errorMessage,
       });
 
-      await this.logActivity(`Pipeline execution failed: ${error.message}`, 'error');
+      await this.logActivity(`Pipeline execution failed: ${errorMessage}`, 'error');
 
       await this.sendProgress({
         type: 'error',
-        message: `Pipeline failed: ${error.message}`,
+        message: `Pipeline failed: ${errorMessage}`,
       });
 
       throw error;
