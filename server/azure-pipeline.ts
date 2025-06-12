@@ -111,13 +111,6 @@ export class AzurePipelineService {
 
       for (const job of jobs) {
         try {
-          // Check if job already exists
-          const existingJob = await storage.getJobPostingByJobID(job.data.jobID);
-          if (existingJob) {
-            processedCount++;
-            continue;
-          }
-
           // Process location with AI
           const aiLocation = await this.processLocationWithAI(job);
           
@@ -217,7 +210,7 @@ export class AzurePipelineService {
     while (hasMore) {
       const url = `https://${process.env.ALGOLIA_APPLICATION_ID}.algolia.net/1/indexes/GROUP_EN_dateDesc/query`;
       const body = {
-        params: `filters=data.country:"United States"&hitsPerPage=1000&page=${page}&query=`
+        params: `filters=data.country:"United States"&hitsPerPage=3&page=${page}&query=`
       };
 
       try {

@@ -162,7 +162,13 @@ export class AzureSQLStorage implements IStorage {
     const request = pool.request();
     
     try {
-      request.input('jobId', sql.NVarChar, jobID);
+      // Ensure jobID is a valid string
+      const validJobId = String(jobID || '').trim();
+      if (!validJobId) {
+        return undefined;
+      }
+      
+      request.input('jobId', sql.NVarChar, validJobId);
       const result = await request.query('SELECT * FROM job_posting_listings WHERE job_id = @jobId');
       
       if (result.recordset.length > 0) {
@@ -181,16 +187,35 @@ export class AzureSQLStorage implements IStorage {
     const request = pool.request();
 
     try {
-      request.input('jobId', sql.NVarChar, job.jobId);
-      request.input('jobUrl', sql.NVarChar, job.jobUrl);
-      request.input('title', sql.NVarChar, job.title);
-      request.input('city', sql.NVarChar, job.city || null);
-      request.input('state', sql.NVarChar, job.state || null);
-      request.input('country', sql.NVarChar, job.country || null);
-      request.input('latitude', sql.Decimal(10, 8), job.latitude ? parseFloat(job.latitude) : null);
-      request.input('longitude', sql.Decimal(11, 8), job.longitude ? parseFloat(job.longitude) : null);
-      request.input('description', sql.NVarChar, job.description || null);
-      request.input('companyName', sql.NVarChar, job.companyName || null);
+      // Ensure all required fields are valid strings
+      const validatedJob = {
+        jobId: String(job.jobId || '').trim(),
+        jobUrl: String(job.jobUrl || '').trim(),
+        title: String(job.title || '').trim(),
+        city: job.city ? String(job.city).trim() : null,
+        state: job.state ? String(job.state).trim() : null,
+        country: job.country ? String(job.country).trim() : null,
+        latitude: job.latitude ? parseFloat(String(job.latitude)) : null,
+        longitude: job.longitude ? parseFloat(String(job.longitude)) : null,
+        description: job.description ? String(job.description).trim() : null,
+        companyName: job.companyName ? String(job.companyName).trim() : null
+      };
+
+      // Validate required fields
+      if (!validatedJob.jobId || !validatedJob.jobUrl || !validatedJob.title) {
+        throw new Error('Missing required fields: jobId, jobUrl, or title');
+      }
+
+      request.input('jobId', sql.NVarChar, validatedJob.jobId);
+      request.input('jobUrl', sql.NVarChar, validatedJob.jobUrl);
+      request.input('title', sql.NVarChar, validatedJob.title);
+      request.input('city', sql.NVarChar, validatedJob.city);
+      request.input('state', sql.NVarChar, validatedJob.state);
+      request.input('country', sql.NVarChar, validatedJob.country);
+      request.input('latitude', sql.Decimal(10, 8), validatedJob.latitude);
+      request.input('longitude', sql.Decimal(11, 8), validatedJob.longitude);
+      request.input('description', sql.NVarChar, validatedJob.description);
+      request.input('companyName', sql.NVarChar, validatedJob.companyName);
 
       // Create location point if coordinates exist
       let locationPointSQL = 'NULL';
