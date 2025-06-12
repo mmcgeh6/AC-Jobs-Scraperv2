@@ -436,42 +436,59 @@ Use the job context and URL to determine the most accurate location.`;
   }
 
   private async getCoordinates(location: AILocationResponse): Promise<{ latitude: string; longitude: string; zipcode: string }> {
-    const address = [location.city, location.state, location.country]
-      .filter(Boolean)
-      .join(', ');
+    // Try multiple address formats to improve geocoding accuracy
+    const addressFormats = [
+      // Most specific first
+      [location.city, location.state, location.country].filter(Boolean).join(', '),
+      // Add "USA" if country is United States
+      location.country === 'United States' ? 
+        [location.city, location.state, 'USA'].filter(Boolean).join(', ') : null,
+      // Try with state abbreviation if we have full state name
+      location.state && location.country === 'United States' ? 
+        [location.city, this.getStateAbbreviation(location.state), 'USA'].filter(Boolean).join(', ') : null,
+    ].filter(Boolean);
 
-    try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_GEOCODING_API_KEY}`;
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`Geocoding API error: ${response.status}`);
-      }
+    for (const address of addressFormats) {
+      try {
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${process.env.GOOGLE_GEOCODING_API_KEY}`;
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          console.warn(`Geocoding API error for ${address}: ${response.status}`);
+          continue;
+        }
 
-      const result: GeocodingResponse = await response.json();
-      
-      if (result.status === 'OK' && result.results.length > 0) {
-        const locationData = result.results[0].geometry.location;
+        const result: GeocodingResponse = await response.json();
         
-        // Extract postal code from address components
-        const postalCode = result.results[0].address_components.find(
-          component => component.types.includes('postal_code')
-        );
-        
-        return {
-          latitude: locationData.lat.toString(),
-          longitude: locationData.lng.toString(),
-          zipcode: postalCode?.long_name || '',
-        };
-      } else {
-        console.warn(`Geocoding failed for address: ${address}, status: ${result.status}`);
-        return { latitude: '', longitude: '', zipcode: '' };
+        if (result.status === 'OK' && result.results.length > 0) {
+          const locationData = result.results[0].geometry.location;
+          
+          // Extract postal code from address components
+          const postalCode = result.results[0].address_components.find(
+            component => component.types.includes('postal_code')
+          );
+
+          // Log the result for debugging
+          const zipcode = postalCode?.long_name || '';
+          console.log(`🎯 Geocoding success for "${address}": lat=${locationData.lat}, lng=${locationData.lng}, zip=${zipcode || 'none'}`);
+          
+          return {
+            latitude: locationData.lat.toString(),
+            longitude: locationData.lng.toString(),
+            zipcode,
+          };
+        } else {
+          console.warn(`Geocoding failed for address: ${address}, status: ${result.status}`);
+        }
+      } catch (error) {
+        console.warn(`Geocoding error for address: ${address}:`, error);
       }
-    } catch (error) {
-      console.warn(`Geocoding error for address: ${address}:`, error);
-      return { latitude: '', longitude: '', zipcode: '' };
     }
+
+    // If all attempts failed
+    console.warn(`⚠️ All geocoding attempts failed for location: ${location.city}, ${location.state}, ${location.country}`);
+    return { latitude: '', longitude: '', zipcode: '' };
   }
 
   private async synchronizeDatabase(enrichedJobs: any[]): Promise<{ newJobs: number; removedJobs: number }> {
