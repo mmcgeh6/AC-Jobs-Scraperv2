@@ -142,7 +142,7 @@ export function getStorage(): IStorage {
     console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
     console.log('DATABASE_URL value:', process.env.DATABASE_URL ? 'Present' : 'Missing');
 
-    _storage = process.env.DATABASE_URL ? new SQLStorage() : new MemStorage();
+    _storage = process.env.DATABASE_URL?.includes('jdbc:sqlserver://') ? new AzureSQLStorage() : new MemStorage();
     console.log('📊 Storage type selected:', _storage.constructor.name);
   }
   return _storage;
