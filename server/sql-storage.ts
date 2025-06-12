@@ -95,8 +95,29 @@ export class SQLStorage implements IStorage {
   async getAllJobPostings(): Promise<JobPosting[]> {
     const pool = await this.getPool();
     const request = pool.request();
-    const result = await request.query('SELECT * FROM job_postings ORDER BY id DESC');
-    return result.recordset;
+    
+    // First, let's check what columns actually exist in the table
+    try {
+      console.log('=== CHECKING DATABASE SCHEMA ===');
+      const schemaQuery = `
+        SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'job_postings' 
+        ORDER BY ORDINAL_POSITION
+      `;
+      const schemaResult = await request.query(schemaQuery);
+      console.log('Database columns found:');
+      schemaResult.recordset.forEach(col => {
+        console.log(`  - ${col.COLUMN_NAME}: ${col.DATA_TYPE} (nullable: ${col.IS_NULLABLE})`);
+      });
+      console.log('=== END SCHEMA CHECK ===');
+      
+      const result = await request.query('SELECT * FROM job_postings ORDER BY id DESC OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY');
+      return result.recordset;
+    } catch (error) {
+      console.error('Failed to query job_postings table:', error);
+      return [];
+    }
   }
 
   async getJobPostingByJobID(jobID: string): Promise<JobPosting | undefined> {
