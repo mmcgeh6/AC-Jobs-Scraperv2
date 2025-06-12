@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -13,19 +13,20 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { wsManager } from "@/lib/websocket";
 import { 
   Play, 
+  Pause, 
+  RefreshCw, 
   Database, 
-  Search, 
-  Brain, 
-  MapPin, 
+  Activity, 
   CheckCircle, 
-  Loader2, 
-  Clock, 
-  Settings,
-  Trash2,
-  Circle,
-  Eye,
+  AlertCircle,
+  Clock,
+  BarChart3,
+  Search,
+  Brain,
+  MapPin,
   FileText,
-  BarChart3
+  Eye,
+  Settings
 } from "lucide-react";
 
 interface PipelineStatus {
@@ -74,6 +75,7 @@ export default function ControlCenter() {
   const [showProgress, setShowProgress] = useState(false);
   const [batchSize, setBatchSize] = useState(50);
   const [activeTab, setActiveTab] = useState('control');
+  const [processedJobs, setProcessedJobs] = useState<any[]>([]);
 
   // Queries
   const { data: pipelineStatus, refetch: refetchStatus } = useQuery<PipelineStatus>({
@@ -81,7 +83,7 @@ export default function ControlCenter() {
     refetchInterval: 5000,
   });
 
-  const { data: activityLogs = [] } = useQuery<ActivityLog[]>({
+  const { data: activityLogs } = useQuery<ActivityLog[]>({
     queryKey: ['/api/activity-logs'],
     refetchInterval: 10000,
   });
@@ -91,44 +93,48 @@ export default function ControlCenter() {
     refetchInterval: 30000,
   });
 
-  const { data: processedJobs = [] } = useQuery<any[]>({
-    queryKey: ['/api/processed-jobs'],
-    refetchInterval: 5000,
-  });
-
   // Mutations
   const startPipelineMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/pipeline/start', { batchSize }),
+    mutationFn: async () => {
+      return await apiRequest(`/api/pipeline/start`, {
+        method: 'POST',
+        body: JSON.stringify({ batchSize }),
+        headers: { 'Content-Type': 'application/json' }
+      });
+    },
     onSuccess: () => {
       toast({
         title: "Pipeline Started",
-        description: `Processing ${batchSize} jobs from Algolia.`,
+        description: `Processing ${batchSize} jobs from Algolia`,
       });
       setShowProgress(true);
-      refetchStatus();
-      queryClient.invalidateQueries({ queryKey: ['/api/processed-jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/pipeline/status'] });
     },
     onError: (error: any) => {
       toast({
-        title: "Failed to Start Pipeline",
-        description: error.message || "An error occurred while starting the pipeline.",
+        title: "Pipeline Error",
+        description: error.message || "Failed to start pipeline",
         variant: "destructive",
       });
     },
   });
 
   const clearLogsMutation = useMutation({
-    mutationFn: () => apiRequest('DELETE', '/api/activity-logs'),
+    mutationFn: async () => {
+      return await apiRequest(`/api/activity-logs/clear`, {
+        method: 'DELETE',
+      });
+    },
     onSuccess: () => {
       toast({
         title: "Logs Cleared",
-        description: "Activity logs have been cleared successfully.",
+        description: "Activity logs have been cleared",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/activity-logs'] });
     },
   });
 
-  // WebSocket setup
+  // WebSocket connection for real-time updates
   useEffect(() => {
     wsManager.connect();
     
@@ -137,101 +143,41 @@ export default function ControlCenter() {
       
       if (data.type === 'complete') {
         setShowProgress(false);
-        toast({
-          title: "Pipeline Completed",
-          description: `Successfully processed jobs. New: ${data.newJobs}, Removed: ${data.removedJobs}`,
-        });
-        refetchStatus();
+        queryClient.invalidateQueries({ queryKey: ['/api/pipeline/status'] });
         queryClient.invalidateQueries({ queryKey: ['/api/activity-logs'] });
-      } else if (data.type === 'error') {
+        
+        // Fetch processed jobs data
+        fetch('/api/pipeline/processed-jobs')
+          .then(res => res.json())
+          .then(jobs => setProcessedJobs(jobs))
+          .catch(console.error);
+      }
+      
+      if (data.type === 'error') {
         setShowProgress(false);
         toast({
-          title: "Pipeline Failed",
-          description: data.message || "An error occurred during pipeline execution.",
+          title: "Pipeline Error",
+          description: data.message || "Pipeline execution failed",
           variant: "destructive",
         });
-        refetchStatus();
       }
     });
 
     return () => {
       wsManager.disconnect();
     };
-  }, [toast, refetchStatus]);
-
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  };
+  }, [toast]);
 
   const formatDate = (dateString: string) => {
-    const now = new Date();
-    const date = new Date(dateString);
-    const isToday = date.toDateString() === now.toDateString();
-    
-    if (isToday) {
-      return `Today, ${formatTime(dateString)}`;
-    }
-    
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const isYesterday = date.toDateString() === yesterday.toDateString();
-    
-    if (isYesterday) {
-      return `Yesterday at ${formatTime(dateString)}`;
-    }
-    
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
+    return new Date(dateString).toLocaleString();
   };
 
-  const getStatusBadge = () => {
-    if (showProgress || pipelineProgress?.type === 'status') {
-      return (
-        <Badge variant="outline" className="bg-azure-blue/10 text-azure-blue border-azure-blue/20">
-          <Circle className="w-2 h-2 mr-2 fill-current" />
-          Running
-        </Badge>
-      );
+  const getProgressPercentage = () => {
+    if (pipelineProgress?.totalJobs && pipelineProgress?.processedJobs) {
+      return Math.round((pipelineProgress.processedJobs / pipelineProgress.totalJobs) * 100);
     }
-
-    if (pipelineStatus?.status === 'completed') {
-      return (
-        <Badge variant="outline" className="bg-success-green/10 text-success-green border-success-green/20">
-          <CheckCircle className="w-2 h-2 mr-2" />
-          Completed
-        </Badge>
-      );
-    }
-
-    if (pipelineStatus?.status === 'failed') {
-      return (
-        <Badge variant="outline" className="bg-error-red/10 text-error-red border-error-red/20">
-          <Circle className="w-2 h-2 mr-2 fill-current" />
-          Failed
-        </Badge>
-      );
-    }
-
-    return (
-      <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-200">
-        <Circle className="w-2 h-2 mr-2 fill-current" />
-        Idle
-      </Badge>
-    );
-  };
-
-  const getCurrentProgress = () => {
-    if (pipelineProgress?.progress !== undefined) {
-      return pipelineProgress.progress;
+    if (pipelineStatus?.totalJobs && pipelineStatus?.processedJobs) {
+      return Math.round((pipelineStatus.processedJobs / pipelineStatus.totalJobs) * 100);
     }
     return 0;
   };
@@ -318,356 +264,250 @@ export default function ControlCenter() {
             
             {/* Main Content */}
             <div className="lg:col-span-2 space-y-6">
-            {/* Pipeline Control Card */}
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h2 className="text-xl font-semibold text-neutral-dark">Pipeline Control</h2>
-                    <p className="text-sm text-gray-500 mt-1">Manually trigger the data pipeline process</p>
+              {/* Pipeline Control Card */}
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h2 className="text-lg font-semibold text-neutral-dark">Data Pipeline Execution</h2>
+                      <p className="text-sm text-gray-600">Fetch, process and sync job listings from Algolia to Azure SQL</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 bg-success-green rounded-full animate-pulse"></div>
+                      <span className="text-sm text-gray-600">Ready</span>
+                    </div>
                   </div>
-                  {getStatusBadge()}
-                </div>
 
-                {/* Batch Size Control */}
-                <div className="border rounded-lg p-4 mb-4 bg-gray-50">
-                  <Label htmlFor="batchSize" className="text-sm font-medium text-neutral-dark">
-                    Batch Size (Number of jobs to process)
-                  </Label>
-                  <div className="flex items-center space-x-4 mt-2">
-                    <Input
-                      id="batchSize"
-                      type="number"
-                      value={batchSize}
-                      onChange={(e) => setBatchSize(Number(e.target.value))}
-                      min={1}
-                      max={1000}
-                      className="w-32"
-                    />
-                    <span className="text-sm text-gray-500">
-                      Recommended: 50-100 for testing, up to 1000 for production
-                    </span>
-                  </div>
-                </div>
-
-                {/* Manual Trigger Section */}
-                <div className="border rounded-lg p-4 mb-6 bg-gradient-to-r from-azure-blue/5 to-azure-dark/5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <h3 className="font-medium text-neutral-dark mb-2">Manual Pipeline Execution</h3>
-                      <p className="text-sm text-gray-600 mb-4">Process {batchSize} jobs: Algolia → AI Processing → Geocoding → SQL Database</p>
-                      
-                      {/* Pipeline Steps Preview */}
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
-                        <div className="flex items-center space-x-2 text-xs">
-                          <div className="w-6 h-6 bg-azure-blue/10 rounded-full flex items-center justify-center">
-                            <Search className="h-3 w-3 text-azure-blue" />
-                          </div>
-                          <span className="text-gray-600">Fetch Jobs</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-xs">
-                          <div className="w-6 h-6 bg-azure-blue/10 rounded-full flex items-center justify-center">
-                            <Brain className="h-3 w-3 text-azure-blue" />
-                          </div>
-                          <span className="text-gray-600">AI Processing</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-xs">
-                          <div className="w-6 h-6 bg-azure-blue/10 rounded-full flex items-center justify-center">
-                            <MapPin className="h-3 w-3 text-azure-blue" />
-                          </div>
-                          <span className="text-gray-600">Geocoding</span>
-                        </div>
-                        <div className="flex items-center space-x-2 text-xs">
-                          <div className="w-6 h-6 bg-azure-blue/10 rounded-full flex items-center justify-center">
-                            <Database className="h-3 w-3 text-azure-blue" />
-                          </div>
-                          <span className="text-gray-600">SQL Sync</span>
-                        </div>
+                  {/* Batch Size Control */}
+                  <div className="mb-6">
+                    <Label htmlFor="batch-size" className="text-sm font-medium text-gray-700 mb-2 block">
+                      Batch Size (jobs to process)
+                    </Label>
+                    <div className="flex items-center space-x-4">
+                      <Input
+                        id="batch-size"
+                        type="number"
+                        min="1"
+                        max="1000"
+                        value={batchSize}
+                        onChange={(e) => setBatchSize(Math.max(1, Math.min(1000, parseInt(e.target.value) || 1)))}
+                        className="w-32"
+                      />
+                      <div className="text-xs text-gray-500">
+                        <span className="block">Recommended: 50-100 for testing</span>
+                        <span className="block">Max: 1000 jobs per run</span>
                       </div>
                     </div>
                   </div>
-                  
-                  {/* Action Button */}
-                  <Button 
-                    onClick={() => startPipelineMutation.mutate()}
-                    disabled={startPipelineMutation.isPending || showProgress}
-                    className="w-full sm:w-auto bg-azure-blue hover:bg-azure-dark text-white"
-                  >
-                    {startPipelineMutation.isPending || showProgress ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Starting...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-4 h-4 mr-2" />
-                        Start Pipeline
-                      </>
-                    )}
-                  </Button>
-                </div>
 
-                {/* Progress Section */}
-                {(showProgress || pipelineProgress?.type === 'status') && (
-                  <div className="border rounded-lg p-4 bg-blue-50">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-medium text-neutral-dark">Pipeline Progress</h3>
-                      <span className="text-sm text-azure-blue font-medium">{getCurrentStep()}</span>
-                    </div>
-                    
-                    {/* Progress Bar */}
-                    <Progress value={getCurrentProgress()} className="mb-4" />
-
-                    {/* Step Details */}
-                    <div className="space-y-2 text-sm">
-                      {pipelineProgress?.totalJobs && (
+                  {/* Control Buttons */}
+                  <div className="flex space-x-4">
+                    <Button
+                      onClick={() => startPipelineMutation.mutate()}
+                      disabled={pipelineStatus?.status === 'running' || startPipelineMutation.isPending}
+                      className="bg-azure-blue hover:bg-azure-blue/90 text-white px-6"
+                    >
+                      {startPipelineMutation.isPending ? (
                         <>
-                          <div className="flex items-center space-x-2">
-                            <CheckCircle className="h-4 w-4 text-success-green" />
-                            <span className="text-gray-600">Fetched {pipelineProgress.totalJobs} job listings from Algolia</span>
-                          </div>
-                          
-                          {pipelineProgress.processedJobs !== undefined && (
-                            <div className="flex items-center space-x-2">
-                              <Loader2 className="h-4 w-4 text-azure-blue animate-spin" />
-                              <span className="text-gray-600">Processing locations with AI ({pipelineProgress.processedJobs}/{pipelineProgress.totalJobs})</span>
-                            </div>
-                          )}
-                          
-                          <div className="flex items-center space-x-2 text-gray-400">
-                            <Clock className="h-4 w-4" />
-                            <span>Pending: Geocoding coordinates</span>
-                          </div>
-                          <div className="flex items-center space-x-2 text-gray-400">
-                            <Clock className="h-4 w-4" />
-                            <span>Pending: Database synchronization</span>
-                          </div>
+                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                          Starting...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 mr-2" />
+                          Start Pipeline
                         </>
                       )}
-                    </div>
+                    </Button>
+                    
+                    <Button
+                      variant="outline"
+                      onClick={() => refetchStatus()}
+                      className="border-azure-blue text-azure-blue hover:bg-azure-blue/10"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Refresh Status
+                    </Button>
                   </div>
-                )}
-              </CardContent>
-            </Card>
 
-            {/* System Status Card */}
-            <Card>
-              <CardContent className="p-6">
-                <h2 className="text-xl font-semibold text-neutral-dark mb-4">System Status</h2>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <Search className="h-5 w-5 text-azure-blue" />
-                        <div>
-                          <h3 className="font-medium text-neutral-dark">Algolia API</h3>
-                          <p className="text-xs text-gray-500">Job listings source</p>
-                        </div>
+                  {/* Progress Section */}
+                  {(showProgress || pipelineStatus?.status === 'running') && (
+                    <div className="mt-6 p-4 bg-azure-blue/5 rounded-lg border border-azure-blue/20">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-medium text-azure-blue">Pipeline Progress</h3>
+                        <Badge variant="outline" className="bg-azure-blue/10 text-azure-blue border-azure-blue/30">
+                          {pipelineStatus?.status || 'running'}
+                        </Badge>
                       </div>
-                      <Badge variant="outline" className="bg-success-green/10 text-success-green border-success-green/20">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Online
-                      </Badge>
-                    </div>
-                  </div>
-                  
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <Brain className="h-5 w-5 text-azure-blue" />
+                      
+                      <div className="space-y-3">
                         <div>
-                          <h3 className="font-medium text-neutral-dark">Azure OpenAI</h3>
-                          <p className="text-xs text-gray-500">GPT-4o-mini</p>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="text-gray-600">Current Step</span>
+                            <span className="font-medium">{getCurrentStep()}</span>
+                          </div>
+                          <Progress value={getProgressPercentage()} className="h-2" />
+                          <div className="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>
+                              {pipelineProgress?.processedJobs || pipelineStatus?.processedJobs || 0} / {pipelineProgress?.totalJobs || pipelineStatus?.totalJobs || 0} jobs
+                            </span>
+                            <span>{getProgressPercentage()}%</span>
+                          </div>
                         </div>
-                      </div>
-                      <Badge variant="outline" className={
-                        systemStatus?.azureOpenAI 
-                          ? "bg-success-green/10 text-success-green border-success-green/20"
-                          : "bg-error-red/10 text-error-red border-error-red/20"
-                      }>
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        {systemStatus?.azureOpenAI ? 'Online' : 'Offline'}
-                      </Badge>
-                    </div>
-                  </div>
-                  
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <MapPin className="h-5 w-5 text-azure-blue" />
-                        <div>
-                          <h3 className="font-medium text-neutral-dark">Google Geocoding</h3>
-                          <p className="text-xs text-gray-500">Location coordinates</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className={
-                        systemStatus?.googleGeocoding 
-                          ? "bg-success-green/10 text-success-green border-success-green/20"
-                          : "bg-error-red/10 text-error-red border-error-red/20"
-                      }>
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        {systemStatus?.googleGeocoding ? 'Online' : 'Offline'}
-                      </Badge>
-                    </div>
-                  </div>
-                  
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <Database className="h-5 w-5 text-azure-blue" />
-                        <div>
-                          <h3 className="font-medium text-neutral-dark">Azure SQL Database</h3>
-                          <p className="text-xs text-gray-500">Data storage</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="bg-success-green/10 text-success-green border-success-green/20">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Online
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Last Execution Summary */}
-            <Card>
-              <CardContent className="p-6">
-                <h2 className="text-lg font-semibold text-neutral-dark mb-4">Last Execution</h2>
-                
-                {pipelineStatus ? (
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Status</span>
-                      <Badge variant="outline" className={
-                        pipelineStatus.status === 'completed' 
-                          ? "bg-success-green/10 text-success-green border-success-green/20"
-                          : pipelineStatus.status === 'failed'
-                          ? "bg-error-red/10 text-error-red border-error-red/20"
-                          : "bg-azure-blue/10 text-azure-blue border-azure-blue/20"
-                      }>
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        {pipelineStatus.status === 'completed' ? 'Success' : 
-                         pipelineStatus.status === 'failed' ? 'Failed' : 'Running'}
-                      </Badge>
+                        {(pipelineProgress?.newJobs !== undefined || pipelineStatus?.newJobs !== undefined) && (
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">New Jobs:</span>
+                              <span className="font-medium text-success-green">
+                                +{pipelineProgress?.newJobs || pipelineStatus?.newJobs || 0}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Removed Jobs:</span>
+                              <span className="font-medium text-error-red">
+                                -{pipelineProgress?.removedJobs || pipelineStatus?.removedJobs || 0}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Started</span>
-                      <span className="text-sm text-neutral-dark">{formatDate(pipelineStatus.startTime)}</span>
+                  )}
+
+                  {/* Last Execution Summary */}
+                  {pipelineStatus && pipelineStatus.status !== 'running' && (
+                    <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                      <h3 className="text-sm font-medium text-gray-700 mb-3">Last Execution Summary</h3>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Status:</span>
+                          <Badge variant={pipelineStatus.status === 'completed' ? 'default' : 'destructive'}>
+                            {pipelineStatus.status}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Duration:</span>
+                          <span className="font-medium">
+                            {pipelineStatus.endTime 
+                              ? Math.round((new Date(pipelineStatus.endTime).getTime() - new Date(pipelineStatus.startTime).getTime()) / 1000) + 's'
+                              : 'In progress'
+                            }
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Jobs Processed:</span>
+                          <span className="font-medium">{pipelineStatus.processedJobs}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Started:</span>
+                          <span className="font-medium">{formatDate(pipelineStatus.startTime)}</span>
+                        </div>
+                      </div>
                     </div>
-                    {pipelineStatus.endTime && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Duration</span>
-                        <span className="text-sm text-neutral-dark">
-                          {Math.round((new Date(pipelineStatus.endTime).getTime() - new Date(pipelineStatus.startTime).getTime()) / 1000)}s
-                        </span>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Sidebar */}
+            <div className="space-y-6">
+              {/* Activity Logs */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center space-x-2">
+                      <Activity className="h-5 w-5 text-azure-blue" />
+                      <span>Activity Logs</span>
+                    </CardTitle>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => clearLogsMutation.mutate()}
+                      disabled={clearLogsMutation.isPending}
+                      className="text-xs"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <ScrollArea className="h-64">
+                    {activityLogs && activityLogs.length > 0 ? (
+                      <div className="space-y-2">
+                        {activityLogs.map((log) => (
+                          <div key={log.id} className="text-xs p-2 rounded border-l-2" style={{
+                            borderLeftColor: 
+                              log.level === 'error' ? '#ef4444' :
+                              log.level === 'warning' ? '#f59e0b' :
+                              log.level === 'success' ? '#10b981' : '#6b7280'
+                          }}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className={`font-medium ${
+                                log.level === 'error' ? 'text-red-600' :
+                                log.level === 'warning' ? 'text-yellow-600' :
+                                log.level === 'success' ? 'text-green-600' : 'text-gray-600'
+                              }`}>
+                                {log.level.toUpperCase()}
+                              </span>
+                              <span className="text-gray-500">
+                                {new Date(log.timestamp).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <p className="text-gray-700">{log.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <Clock className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                        <p className="text-sm">No recent activity</p>
                       </div>
                     )}
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Jobs Processed</span>
-                      <span className="text-sm text-neutral-dark">{pipelineStatus.totalJobs}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">New Jobs Added</span>
-                      <span className="text-sm text-success-green font-medium">+{pipelineStatus.newJobs}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Old Jobs Removed</span>
-                      <span className="text-sm text-error-red">-{pipelineStatus.removedJobs}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">No executions found</p>
-                )}
-              </CardContent>
-            </Card>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
 
-            {/* Activity Log */}
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-neutral-dark">Activity Log</h2>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => clearLogsMutation.mutate()}
-                    disabled={clearLogsMutation.isPending}
-                    className="text-azure-blue hover:text-azure-dark"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" />
-                    Clear
-                  </Button>
-                </div>
-                
-                <div className="space-y-3 max-h-64 overflow-y-auto">
-                  {activityLogs.length > 0 ? (
-                    activityLogs.map((log) => (
-                      <div key={log.id} className="flex items-start space-x-3 pb-3 border-b border-gray-100 last:border-b-0">
-                        <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${
-                          log.level === 'success' ? 'bg-success-green' :
-                          log.level === 'error' ? 'bg-error-red' :
-                          log.level === 'warning' ? 'bg-warning-orange' :
-                          'bg-azure-blue'
-                        }`}></div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-neutral-dark">{log.message}</p>
-                          <p className="text-xs text-gray-500 mt-1">{formatDate(log.timestamp)}</p>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500">No activity logs found</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Configuration */}
-            <Card>
-              <CardContent className="p-6">
-                <h2 className="text-lg font-semibold text-neutral-dark mb-4">Configuration</h2>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Daily Schedule</label>
-                    <div className="flex items-center space-x-2">
-                      <input 
-                        type="time" 
-                        defaultValue="13:00" 
-                        className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-azure-blue focus:border-azure-blue" 
-                      />
-                      <span className="text-sm text-gray-500">EST (UTC-5)</span>
+              {/* System Health */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <BarChart3 className="h-5 w-5 text-azure-blue" />
+                    <span>System Health</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Algolia API Key</span>
+                      <span className={systemStatus?.algoliaApi ? "text-success-green" : "text-error-red"}>
+                        <CheckCircle className="w-4 h-4" />
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Azure OpenAI Key</span>
+                      <span className={systemStatus?.azureOpenAI ? "text-success-green" : "text-error-red"}>
+                        <CheckCircle className="w-4 h-4" />
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Google Geocoding Key</span>
+                      <span className={systemStatus?.googleGeocoding ? "text-success-green" : "text-error-red"}>
+                        <CheckCircle className="w-4 h-4" />
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">SQL Connection</span>
+                      <span className="text-success-green">
+                        <CheckCircle className="w-4 h-4" />
+                      </span>
                     </div>
                   </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Environment Status</label>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Azure OpenAI Key</span>
-                        <span className={systemStatus?.azureOpenAI ? "text-success-green" : "text-error-red"}>
-                          <CheckCircle className="w-4 h-4" />
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">Google Geocoding Key</span>
-                        <span className={systemStatus?.googleGeocoding ? "text-success-green" : "text-error-red"}>
-                          <CheckCircle className="w-4 h-4" />
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">SQL Connection</span>
-                        <span className="text-success-green">
-                          <CheckCircle className="w-4 h-4" />
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardContent className="p-4">
                   <Button 
                     variant="outline" 
                     className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700"
@@ -675,10 +515,8 @@ export default function ControlCenter() {
                     <Settings className="w-4 h-4 mr-2" />
                     Advanced Settings
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
-              </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         )}
