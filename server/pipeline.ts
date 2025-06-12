@@ -136,7 +136,7 @@ export class PipelineService {
 
           // Small delay to prevent rate limiting
           await new Promise(resolve => setTimeout(resolve, 100));
-        } catch (error) {
+        } catch (error: any) {
           console.error(`Error processing job ${job.data.jobID}:`, error);
           await this.logActivity(`Error processing job ${job.data.jobID}: ${error.message}`, 'error');
         }
@@ -186,26 +186,55 @@ export class PipelineService {
   }
 
   private async fetchJobsFromAlgolia(): Promise<AlgoliaJob[]> {
-    // Note: In a real implementation, you'd use the actual Algolia search API
-    // For now, we'll simulate the response structure
-    const mockJobs: AlgoliaJob[] = [
-      {
-        data: {
-          jobID: "155575",
-          city: "Michigan City",
-          country: "United States",
-          externalPath: "https://www.atlascopcogroup.com/en/careers/jobs/job-overview/job-detail/customer-care-representative/155575",
-          lastDayToApply: "2025-09-13T04:59:58.933+00:00",
-          title: "Customer Care Representative",
-          businessArea: "Vacuum Technique"
-        }
-      }
-    ];
-
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const APP_ID = process.env.ALGOLIA_APPLICATION_ID;
+    const API_KEY = process.env.ALGOLIA_API_KEY;
     
-    return mockJobs;
+    if (!APP_ID || !API_KEY) {
+      throw new Error('Algolia credentials not found in environment variables');
+    }
+
+    const allJobs: AlgoliaJob[] = [];
+    let page = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      try {
+        const response = await fetch(`https://${APP_ID}-dsn.algolia.net/1/indexes/*/queries`, {
+          method: 'POST',
+          headers: {
+            'X-Algolia-Application-Id': APP_ID,
+            'X-Algolia-API-Key': API_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requests: [{
+              indexName: 'your_job_index', // Replace with your actual index name
+              params: `page=${page}&hitsPerPage=1000&query=*`
+            }]
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Algolia API error: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        const searchResult = result.results[0] as AlgoliaResponse;
+        
+        allJobs.push(...searchResult.hits);
+        
+        page++;
+        hasMore = page < searchResult.nbPages;
+        
+        // Add small delay to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error('Error fetching from Algolia:', error);
+        throw error;
+      }
+    }
+
+    return allJobs;
   }
 
   private async processLocationWithAI(job: AlgoliaJob): Promise<AILocationResponse> {
@@ -308,12 +337,12 @@ URL: ${job.data.externalPath}`;
 
   private async synchronizeDatabase(enrichedJobs: any[]): Promise<{ newJobs: number; removedJobs: number }> {
     const existingJobs = await storage.getAllJobPostings();
-    const existingJobIDs = new Set(existingJobs.map(job => job.jobID));
+    const existingJobIDs = new Set(existingJobs.map(job => job.jobID).filter(Boolean));
     const newJobIDs = new Set(enrichedJobs.map(job => job.data.jobID));
 
     // Find jobs to remove (in database but not in new data)
-    const jobsToRemove = existingJobs.filter(job => !newJobIDs.has(job.jobID));
-    const removedJobIDs = jobsToRemove.map(job => job.jobID);
+    const jobsToRemove = existingJobs.filter(job => job.jobID && !newJobIDs.has(job.jobID));
+    const removedJobIDs = jobsToRemove.map(job => job.jobID).filter(Boolean);
 
     // Remove old jobs
     if (removedJobIDs.length > 0) {
@@ -325,19 +354,37 @@ URL: ${job.data.externalPath}`;
 
     // Add new jobs
     for (const job of jobsToAdd) {
+      const lat = parseFloat(job.latitude || '0');
+      const lng = parseFloat(job.longitude || '0');
+      const locationPoint = lat !== 0 && lng !== 0 ? `POINT (${lng} ${lat})` : null;
+
       await storage.createJobPosting({
-        jobID: job.data.jobID,
-        city: job.data.city,
-        country: job.data.country,
-        externalPath: job.data.externalPath,
-        lastDayToApply: new Date(job.data.lastDayToApply),
         title: job.data.title,
-        businessArea: job.data.businessArea,
-        parsedCity: job.city,
-        parsedState: job.state,
-        parsedCountry: job.country,
+        description: job.data.description || null,
+        full_text: job.data.full_text || null,
+        url: job.data.externalPath,
+        company_name: job.data.company || null,
+        brand: job.data.brand || null,
+        functional_area: job.data.businessArea || null,
+        work_type: job.data.workType || null,
+        location_city: job.city,
+        location_state: job.state,
+        state_abbrev: this.getStateAbbreviation(job.state),
+        zip_code: job.data.zipCode || null,
+        country: job.country,
         latitude: job.latitude,
         longitude: job.longitude,
+        location_point: locationPoint,
+        job_details_json: JSON.stringify({
+          businessArea: job.data.businessArea,
+          lastDayToApply: job.data.lastDayToApply,
+          source: 'algolia'
+        }),
+        status: "Active",
+        is_expired: false,
+        jobID: job.data.jobID,
+        lastDayToApply: job.data.lastDayToApply ? new Date(job.data.lastDayToApply) : null,
+        businessArea: job.data.businessArea,
       });
     }
 
@@ -345,6 +392,22 @@ URL: ${job.data.externalPath}`;
       newJobs: jobsToAdd.length,
       removedJobs: removedJobIDs.length
     };
+  }
+
+  private getStateAbbreviation(stateName: string): string {
+    const stateMap: { [key: string]: string } = {
+      'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
+      'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
+      'Hawaii': 'HI', 'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA',
+      'Kansas': 'KS', 'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+      'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS', 'Missouri': 'MO',
+      'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+      'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH',
+      'Oklahoma': 'OK', 'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+      'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT', 'Vermont': 'VT',
+      'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY'
+    };
+    return stateMap[stateName] || stateName.substring(0, 2).toUpperCase();
   }
 }
 

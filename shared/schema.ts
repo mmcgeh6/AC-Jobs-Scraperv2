@@ -4,22 +4,32 @@ import { z } from "zod";
 
 export const jobPostings = pgTable("job_postings", {
   id: serial("id").primaryKey(),
-  jobID: text("jobID").notNull().unique(),
-  city: text("city").notNull(),
-  country: text("country").notNull(),
-  externalPath: text("externalPath").notNull(),
-  lastDayToApply: timestamp("lastDayToApply").notNull(),
   title: text("title").notNull(),
-  businessArea: text("businessArea").notNull(),
-  // AI enriched fields
-  parsedCity: text("parsedCity"),
-  parsedState: text("parsedState"),
-  parsedCountry: text("parsedCountry"),
-  // Geocoding fields
+  description: text("description"),
+  full_text: text("full_text"),
+  url: text("url"),
+  company_name: text("company_name"),
+  brand: text("brand"),
+  functional_area: text("functional_area"),
+  work_type: text("work_type"),
+  location_city: text("location_city"),
+  location_state: text("location_state"),
+  state_abbrev: text("state_abbrev"),
+  zip_code: text("zip_code"),
+  country: text("country"),
   latitude: decimal("latitude", { precision: 10, scale: 8 }),
   longitude: decimal("longitude", { precision: 11, scale: 8 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+  location_point: text("location_point"), // POINT geometry as text
+  job_details_json: text("job_details_json"),
+  status: text("status").default("Active"),
+  is_expired: boolean("is_expired").default(false),
+  record_created_on: timestamp("record_created_on").defaultNow(),
+  created_at: timestamp("created_at").defaultNow(),
+  last_seen: timestamp("last_seen").defaultNow(),
+  // Internal tracking
+  jobID: text("jobID").unique(), // From Algolia
+  lastDayToApply: timestamp("lastDayToApply"),
+  businessArea: text("businessArea"),
 });
 
 export const pipelineExecutions = pgTable("pipeline_executions", {
@@ -45,8 +55,9 @@ export const activityLogs = pgTable("activity_logs", {
 
 export const insertJobPostingSchema = createInsertSchema(jobPostings).omit({
   id: true,
-  createdAt: true,
-  updatedAt: true,
+  record_created_on: true,
+  created_at: true,
+  last_seen: true,
 });
 
 export const insertPipelineExecutionSchema = createInsertSchema(pipelineExecutions).omit({

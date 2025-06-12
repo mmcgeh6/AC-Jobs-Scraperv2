@@ -37,17 +37,34 @@ export class MemStorage implements IStorage {
 
   async createJobPosting(job: InsertJobPosting): Promise<JobPosting> {
     const newJob: JobPosting = {
-      ...job,
       id: this.currentJobId++,
-      parsedCity: job.parsedCity || null,
-      parsedState: job.parsedState || null,
-      parsedCountry: job.parsedCountry || null,
+      title: job.title,
+      description: job.description || null,
+      full_text: job.full_text || null,
+      url: job.url || null,
+      company_name: job.company_name || null,
+      brand: job.brand || null,
+      functional_area: job.functional_area || null,
+      work_type: job.work_type || null,
+      location_city: job.location_city || null,
+      location_state: job.location_state || null,
+      state_abbrev: job.state_abbrev || null,
+      zip_code: job.zip_code || null,
+      country: job.country || null,
       latitude: job.latitude || null,
       longitude: job.longitude || null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      location_point: job.location_point || null,
+      job_details_json: job.job_details_json || null,
+      status: job.status || "Active",
+      is_expired: job.is_expired || false,
+      record_created_on: new Date(),
+      created_at: new Date(),
+      last_seen: new Date(),
+      jobID: job.jobID || null,
+      lastDayToApply: job.lastDayToApply || null,
+      businessArea: job.businessArea || null,
     };
-    this.jobPostings.set(job.jobID, newJob);
+    this.jobPostings.set(job.jobID || String(newJob.id), newJob);
     return newJob;
   }
 
