@@ -142,9 +142,8 @@ export function getStorage(): IStorage {
     console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
     console.log('DATABASE_URL value:', process.env.DATABASE_URL ? 'Present' : 'Missing');
 
-    // Temporarily use MemStorage until database schema is properly set up
-    _storage = new MemStorage();
-    console.log('📊 Storage type selected: MemStorage (temporary for pipeline testing)');
+    _storage = process.env.DATABASE_URL ? new SQLStorage() : new MemStorage();
+    console.log('📊 Storage type selected:', _storage.constructor.name);
   }
   return _storage;
 }

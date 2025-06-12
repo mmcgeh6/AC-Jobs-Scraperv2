@@ -79,16 +79,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Debug endpoint to check database schema
-  app.get("/api/debug/schema", async (req, res) => {
-    try {
-      const schema = await (storage as any).checkDatabaseSchema();
-      res.json(schema);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
   app.get('/api/jobs', async (req, res) => {
     try {
       console.log('🔍 Testing database connection and retrieving jobs...');

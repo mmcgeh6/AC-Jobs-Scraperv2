@@ -36,7 +36,14 @@ function parseJdbcConnectionString(jdbcUrl: string) {
   };
 }
 
-const connectionString = process.env.DATABASE_URL;
+const getConnectionString = () => {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    console.error('DATABASE_URL environment variable is not set');
+    console.error('Available environment variables:', Object.keys(process.env).filter(key => key.startsWith('DATABASE')));
+  }
+  return connectionString;
+};
 
 let pool: sql.ConnectionPool | null = null;
 
@@ -45,6 +52,7 @@ async function initializeConnection(): Promise<sql.ConnectionPool> {
     return pool;
   }
 
+  const connectionString = getConnectionString();
   if (!connectionString) {
     throw new Error("DATABASE_URL is not defined in environment variables.");
   }
@@ -87,15 +95,36 @@ export class SQLStorage implements IStorage {
   async getAllJobPostings(): Promise<JobPosting[]> {
     const pool = await this.getPool();
     const request = pool.request();
-    const result = await request.query('SELECT * FROM job_postings ORDER BY id DESC');
-    return result.recordset;
+    
+    // First, let's check what columns actually exist in the table
+    try {
+      console.log('=== CHECKING DATABASE SCHEMA ===');
+      const schemaQuery = `
+        SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_NAME = 'job_postings' 
+        ORDER BY ORDINAL_POSITION
+      `;
+      const schemaResult = await request.query(schemaQuery);
+      console.log('Database columns found:');
+      schemaResult.recordset.forEach(col => {
+        console.log(`  - ${col.COLUMN_NAME}: ${col.DATA_TYPE} (nullable: ${col.IS_NULLABLE})`);
+      });
+      console.log('=== END SCHEMA CHECK ===');
+      
+      const result = await request.query('SELECT * FROM job_postings ORDER BY id DESC OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY');
+      return result.recordset;
+    } catch (error) {
+      console.error('Failed to query job_postings table:', error);
+      return [];
+    }
   }
 
   async getJobPostingByJobID(jobID: string): Promise<JobPosting | undefined> {
     const pool = await this.getPool();
     const request = pool.request();
-    request.input('job_id', sql.VarChar, jobID);
-    const result = await request.query('SELECT * FROM job_postings WHERE job_id = @job_id');
+    request.input('jobID', sql.VarChar, jobID);
+    const result = await request.query('SELECT * FROM job_postings WHERE jobID = @jobID');
     return result.recordset[0];
   }
 
@@ -107,49 +136,43 @@ export class SQLStorage implements IStorage {
     console.log(`[SQLStorage] Preparing to insert job: ${jobIdString}`);
 
     try {
-      // Map the fields to match the actual database schema
-      request.input('job_id', sql.VarChar(255), jobIdString);
+      request.input('jobID', sql.VarChar(50), jobIdString);
       request.input('title', sql.NVarChar(500), job.title || '');
-      request.input('url', sql.NVarChar(1000), job.url || '');
       request.input('description', sql.NVarChar(sql.MAX), job.description || null);
       request.input('full_text', sql.NVarChar(sql.MAX), job.full_text || null);
-      request.input('company_name', sql.NVarChar(255), job.company_name || null);
-      request.input('brand', sql.NVarChar(255), job.brand || null);
-      request.input('functional_area', sql.NVarChar(255), job.functional_area || null);
+      request.input('url', sql.VarChar(1000), job.url || null);
+      request.input('company_name', sql.NVarChar(200), job.company_name || null);
+      request.input('brand', sql.NVarChar(200), job.brand || null);
+      request.input('functional_area', sql.NVarChar(200), job.functional_area || null);
       request.input('work_type', sql.NVarChar(100), job.work_type || null);
       request.input('location_city', sql.NVarChar(100), job.location_city || null);
       request.input('location_state', sql.NVarChar(100), job.location_state || null);
-      request.input('state_abbrev', sql.NVarChar(5), job.state_abbrev || null);
-      request.input('zip_code', sql.NVarChar(10), job.zip_code || null);
+      request.input('state_abbrev', sql.NVarChar(10), job.state_abbrev || null);
+      request.input('zip_code', sql.VarChar(20), job.zip_code || null);
       request.input('country', sql.NVarChar(100), job.country || null);
       request.input('latitude', sql.Decimal(10, 8), job.latitude ? parseFloat(String(job.latitude)) : null);
       request.input('longitude', sql.Decimal(11, 8), job.longitude ? parseFloat(String(job.longitude)) : null);
       request.input('job_details_json', sql.NVarChar(sql.MAX), job.job_details_json || null);
-      request.input('status', sql.NVarChar(50), job.status || 'Active');
+      request.input('status', sql.VarChar(50), job.status || 'Active');
       request.input('is_expired', sql.Bit, job.is_expired || false);
-      request.input('created_at', sql.DateTime2, new Date());
-      request.input('record_created_on', sql.DateTime2, new Date());
-      request.input('last_seen', sql.DateTime2, new Date());
+      request.input('lastDayToApply', sql.DateTime2, job.lastDayToApply ? new Date(job.lastDayToApply) : null);
+      request.input('businessArea', sql.NVarChar(200), job.businessArea || null);
 
-      // Handle geospatial data using the correct geography format
-      let locationPointValue = null;
-      if (job.latitude && job.longitude) {
-        locationPointValue = `POINT(${job.longitude} ${job.latitude})`;
-      }
-      request.input('location_point_wkt', sql.NVarChar, locationPointValue);
+      // Handle geospatial data
+      request.input('location_point', sql.NVarChar, job.location_point);
 
       const insertQuery = `
         INSERT INTO job_postings (
-          job_id, title, url, description, full_text, company_name, brand, functional_area, work_type,
-          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude, 
-          job_details_json, status, is_expired, created_at, record_created_on, last_seen, location_point
+          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
+          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude, location_point,
+          job_details_json, status, is_expired, lastDayToApply, businessArea
         )
         OUTPUT INSERTED.*
         VALUES (
-          @job_id, @title, @url, @description, @full_text, @company_name, @brand, @functional_area, @work_type,
+          @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
           @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude, 
-          @job_details_json, @status, @is_expired, @created_at, @record_created_on, @last_seen,
-          IIF(@location_point_wkt IS NOT NULL, geography::STPointFromText(@location_point_wkt, 4326), NULL)
+          IIF(@location_point IS NOT NULL, geography::STPointFromText(@location_point, 4326), NULL),
+          @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
         )
       `;
       
@@ -168,8 +191,8 @@ export class SQLStorage implements IStorage {
   async deleteJobPosting(jobID: string): Promise<void> {
     const pool = await this.getPool();
     const request = pool.request();
-    request.input('job_id', sql.VarChar, jobID);
-    await request.query('DELETE FROM job_postings WHERE job_id = @job_id');
+    request.input('jobID', sql.VarChar, jobID);
+    await request.query('DELETE FROM job_postings WHERE jobID = @jobID');
   }
 
   async deleteJobPostingsByJobIDs(jobIDs: string[]): Promise<void> {
@@ -178,11 +201,11 @@ export class SQLStorage implements IStorage {
     const request = pool.request();
     const nonNullJobIds = jobIDs.filter((id): id is string => id !== null);
     if (nonNullJobIds.length > 0) {
-      const placeholders = nonNullJobIds.map((_, i) => `@job_id${i}`).join(',');
+      const placeholders = nonNullJobIds.map((_, i) => `@jobID${i}`).join(',');
       nonNullJobIds.forEach((id, i) => {
-        request.input(`job_id${i}`, sql.VarChar, id);
+        request.input(`jobID${i}`, sql.VarChar, id);
       });
-      await request.query(`DELETE FROM job_postings WHERE job_id IN (${placeholders})`);
+      await request.query(`DELETE FROM job_postings WHERE jobID IN (${placeholders})`);
     }
   }
 
