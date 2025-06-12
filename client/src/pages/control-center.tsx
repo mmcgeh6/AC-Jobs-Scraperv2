@@ -1,9 +1,13 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { wsManager } from "@/lib/websocket";
@@ -18,7 +22,10 @@ import {
   Clock, 
   Settings,
   Trash2,
-  Circle
+  Circle,
+  Eye,
+  FileText,
+  BarChart3
 } from "lucide-react";
 
 interface PipelineStatus {
@@ -65,6 +72,7 @@ export default function ControlCenter() {
   const { toast } = useToast();
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress | null>(null);
   const [showProgress, setShowProgress] = useState(false);
+  const [batchSize, setBatchSize] = useState(50);
 
   // Queries
   const { data: pipelineStatus, refetch: refetchStatus } = useQuery<PipelineStatus>({

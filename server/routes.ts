@@ -25,12 +25,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // API Routes
   app.post('/api/pipeline/start', async (req, res) => {
     try {
-      // Start pipeline execution asynchronously
-      pipelineService.executePipeline().catch(error => {
+      const { batchSize = 100 } = req.body;
+      
+      // Start pipeline execution asynchronously with batch size
+      pipelineService.executePipeline(batchSize).catch(error => {
         console.error('Pipeline execution failed:', error);
       });
 
-      res.json({ message: 'Pipeline started successfully' });
+      res.json({ message: 'Pipeline started successfully', batchSize });
     } catch (error: any) {
       console.error('Failed to start pipeline:', error);
       res.status(500).json({ message: 'Failed to start pipeline', error: error.message });
@@ -64,6 +66,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Failed to clear activity logs:', error);
       res.status(500).json({ message: 'Failed to clear activity logs', error: error.message });
+    }
+  });
+
+  app.get('/api/processed-jobs', async (req, res) => {
+    try {
+      const processedJobs = pipelineService.getProcessedJobs();
+      res.json(processedJobs);
+    } catch (error: any) {
+      console.error('Failed to get processed jobs:', error);
+      res.status(500).json({ message: 'Failed to get processed jobs', error: error.message });
     }
   });
 

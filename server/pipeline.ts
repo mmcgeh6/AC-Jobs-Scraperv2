@@ -41,6 +41,7 @@ interface GeocodingResponse {
 export class PipelineService {
   private ws: WebSocket | null = null;
   private currentExecutionId: number | null = null;
+  private processedJobs: any[] = [];
 
   setWebSocket(ws: WebSocket) {
     this.ws = ws;
@@ -60,7 +61,9 @@ export class PipelineService {
     });
   }
 
-  async executePipeline(): Promise<void> {
+  async executePipeline(batchSize: number = 100): Promise<void> {
+    // Clear previous job data
+    this.processedJobs = [];
     // Create pipeline execution record
     const execution = await storage.createPipelineExecution({
       status: 'running',
@@ -86,7 +89,8 @@ export class PipelineService {
         progress: 10 
       });
       
-      const jobs = await this.fetchJobsFromAlgolia();
+      const allJobs = await this.fetchJobsFromAlgolia();
+      const jobs = allJobs.slice(0, batchSize); // Limit to batch size
       
       await storage.updatePipelineExecution(execution.id, {
         totalJobs: jobs.length,
@@ -113,10 +117,20 @@ export class PipelineService {
           // Geocoding
           const coordinates = await this.getCoordinates(aiResult);
           
-          enrichedJobs.push({
+          const enrichedJob = {
             ...job,
             ...aiResult,
             ...coordinates
+          };
+          
+          enrichedJobs.push(enrichedJob);
+          
+          // Store processed job data for dashboard viewing
+          this.processedJobs.push({
+            originalData: job.data,
+            aiProcessed: aiResult,
+            coordinates: coordinates,
+            timestamp: new Date().toISOString()
           });
 
           processedCount++;
@@ -400,6 +414,10 @@ URL: ${job.data.externalPath}`;
       newJobs: jobsToAdd.length,
       removedJobs: removedJobIDs.length
     };
+  }
+
+  getProcessedJobs(): any[] {
+    return this.processedJobs;
   }
 
   private getStateAbbreviation(stateName: string): string {
