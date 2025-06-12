@@ -206,8 +206,9 @@ export class AzurePipelineService {
             });
 
           } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
             console.error(`Failed to process job ${job.data.jobID}:`, error);
-            await this.logActivity(`Failed to process job ${job.data.title}: ${error.message}`, 'error');
+            await this.logActivity(`Failed to process job ${job.data.title}: ${errorMessage}`, 'error');
             processedCount++;
           }
         }
@@ -227,8 +228,9 @@ export class AzurePipelineService {
             await storage.createJobPosting(enrichedJob);
             addedCount++;
           } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
             console.warn(`Failed to save job ${enrichedJob.jobId}:`, error);
-            await this.logActivity(`Failed to save job ${enrichedJob.title}: ${error.message}`, 'warning');
+            await this.logActivity(`Failed to save job ${enrichedJob.title}: ${errorMessage}`, 'warning');
           }
         }
         await this.logActivity(`Added ${addedCount} new job postings to database`, 'success');
@@ -421,7 +423,7 @@ Use the job context and URL to determine the most accurate location.`;
       console.warn('AI processing failed, using original location:', error);
       return {
         city: job.data.city,
-        state: null,
+        state: '',
         country: job.data.country,
       };
     }
@@ -451,11 +453,11 @@ Use the job context and URL to determine the most accurate location.`;
         };
       } else {
         console.warn(`Geocoding failed for address: ${address}, status: ${result.status}`);
-        return { latitude: null, longitude: null };
+        return { latitude: '', longitude: '' };
       }
     } catch (error) {
       console.warn(`Geocoding error for address: ${address}:`, error);
-      return { latitude: null, longitude: null };
+      return { latitude: '', longitude: '' };
     }
   }
 
@@ -471,10 +473,11 @@ Use the job context and URL to determine the most accurate location.`;
         await storage.createJobPosting(job);
         newJobsCount++;
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         // Handle duplicate key errors gracefully (job already exists)
-        if (!error.message.includes('UNIQUE KEY constraint')) {
+        if (!errorMessage.includes('UNIQUE KEY constraint')) {
           console.error(`Failed to create job posting for ${job.jobId}:`, error);
-          await this.logActivity(`Failed to save job: ${job.title} - ${error.message}`, 'error');
+          await this.logActivity(`Failed to save job: ${job.title} - ${errorMessage}`, 'error');
         }
       }
     }
