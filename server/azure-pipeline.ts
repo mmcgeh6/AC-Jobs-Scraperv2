@@ -126,7 +126,7 @@ export class AzurePipelineService {
 
           // Create enriched job object matching Azure SQL schema
           const enrichedJob = {
-            jobId: job.data.jobID,
+            jobId: String(job.data.jobID),
             jobUrl: job.data.externalPath,
             title: job.data.title,
             city: aiLocation.city,
