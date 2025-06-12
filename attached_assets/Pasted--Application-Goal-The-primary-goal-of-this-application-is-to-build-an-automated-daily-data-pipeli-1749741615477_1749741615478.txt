@@ -1,0 +1,87 @@
+
+Application Goal
+The primary goal of this application is to build an automated, daily data pipeline. This pipeline fetches job listings from the Algolia API, enriches them with standardized location and geospatial data using AI and geocoding services, and maintains an up-to-date, clean copy of these listings in an Azure SQL database.
+The final output is a reliable, structured dataset of job postings, ready for analysis or use in other applications, which accurately reflects the current job listings from the source.
+
+Detailed Workflow Steps & Sub-steps
+Here is the sequential process the application must execute:
+Step 1: Automated Daily Execution (The Trigger)
+The entire process is initiated automatically on a daily schedule.
+Sub-step 1.1: Timer Trigger is used to start the workflow at a specific time every day (e.g., 1pm est UTC).
+Step 2: Fetch Raw Job Data from Algolia
+The first action is to retrieve the complete, current list of all job postings from the source.
+Sub-step 2.1: Make an authenticated API call to the specified Algolia search index.
+Sub-step 2.2: Fetch all job records. This may require handling pagination to ensure every job is retrieved.
+Sub-step 2.3: For each job object found in the body.hits array, extract the following key-value pairs from the data object:
+Job ID:
+
+
+JSON Path: data.jobID
+Example Value: 155575
+City:
+
+
+JSON Path: data.city
+Example Value: "Michigan City"
+External Path (URL):
+
+
+JSON Path: data.externalPath
+Example Value: "https://www.atlascopcogroup.com/en/careers/jobs/job-overview/job-detail/customer-care-representative/155575"
+Application Deadline:
+
+
+JSON Path: data.lastDayToApply
+Example Value: "2025-09-13T04:59:58.933+00:00"
+Country:
+
+
+JSON Path: data.country
+Example Value: "United States"
+Title:
+
+
+JSON Path: data.title
+Example Value: "Customer Care Representative"
+Business Area:
+
+
+JSON Path: data.businessArea
+Example Value: "Vacuum Technique"
+
+
+Step 3: Process and Enrich Each Individual Job Listing
+The application must loop through every job record fetched in Step 2 to add more valuable, structured data.
+Sub-step 3.1: Parse Location Data with AI
+Action: For each job, call the Azure OpenAI chat completion endpoint.
+Input: Send the text from the city and country, job title, external path fields.
+Use this prompt structure From the input below, find and break down the City, State, and Country from the content. The input will be a mix of the city/state, a job URL which may contain the city and state, and a job  title that may also contain it. Your job is to output the city, state, country in formatted json. Output the full state spelling, not the abbreviation. 
+Azure endpoint: https://ai-acgenaidevtest540461206109.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2025-01-01-preview
+Env file key: Azure_OpenAI_Key( 3fcde4edd6fd43b4968a8e0e716c61e5)
+temperature": 0.8,
+max_tokens": 4096
+Sub-step 3.2: Get Geospatial Coordinates
+Action: Call the Google Geocoding API.
+Input: Use the standardized city, state, and country values returned by the AI in the previous sub-step.
+Task: Retrieve the precise latitude and longitude for that location.Output the latitude, longitude coordinates, then whatever else is needed to make it a geospatial search point in an azure sql table.
+Endpoint: https://maps.googleapis.com/maps/api/geocode/json
+Parameters- address[city,state,country]
+Key env file= GOOGLE_GEOCODING_API_KEY
+Google api key= AIzaSyA3MC5XeDbmLA0Mgv0U7CJTycwQlEVaCzc
+
+
+Step 4: Synchronize Data with the Azure SQL Database
+After all jobs have been processed and enriched, the final step is to update the database to perfectly mirror the source data.
+Sub-step 4.1: Identify and Delete Old Job Postings
+Action: Query the SQL database to get a list of all jobIDs currently stored.
+Logic: Compare the database jobID list with the jobID list freshly fetched from Algolia.
+Execution: Any jobID present in the database but NOT in the new Algolia list is an old/expired job. Execute a SQL DELETE command to remove these rows.
+Sub-step 4.2: Identify and Insert New Job Postings
+Logic: Identify any jobID from the new Algolia list that is NOT already in the database.
+Execution: For each of these new jobs, execute a SQL INSERT command. This command will save the complete, enriched record, including the original data from Algolia plus the parsed city, state, country, latitude, and longitude.
+Azure Sql server name: acnajobs.database.windows.net
+Azure sql database name: ac jobs scraper
+Azure sql database table name: job_postings
+Sql Login: CloudSAde530614
+SQL Password: @pmP$@5UmMcZS8AX
+
