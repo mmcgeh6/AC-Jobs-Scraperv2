@@ -227,6 +227,11 @@ export class PipelineService {
 
     while (page < totalPages) {
       try {
+        console.log(`Fetching page ${page + 1} of ${totalPages}...`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
         const response = await fetch(`https://${APP_ID}.algolia.net/1/indexes/${INDEX_NAME}/query`, {
           method: 'POST',
           headers: {
@@ -236,8 +241,11 @@ export class PipelineService {
           },
           body: JSON.stringify({
             params: `filters=data.country:"United States"&hitsPerPage=100&page=${page}`
-          })
+          }),
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errorText = await response.text();
