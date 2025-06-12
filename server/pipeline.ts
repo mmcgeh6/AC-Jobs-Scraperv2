@@ -460,8 +460,20 @@ REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
     }
 
     // Find jobs to add (in new data but not in database)
-    const jobsToAdd = enrichedJobs.filter(job => !existingJobIDs.has(String(job.data.jobID)));
+    const jobsToAdd = enrichedJobs.filter(job => {
+      const jobIdString = String(job.data.jobID);
+      const isExisting = existingJobIDs.has(jobIdString);
+      console.log(`🔍 Job ${jobIdString}: existing=${isExisting}`);
+      return !isExisting;
+    });
     console.log('🆕 New jobs to add:', jobsToAdd.length);
+    
+    if (jobsToAdd.length === 0) {
+      console.log('⚠️ No new jobs to add - all jobs already exist in database');
+      console.log('🔍 Debug info:');
+      console.log('  Existing IDs:', Array.from(existingJobIDs));
+      console.log('  New IDs:', Array.from(newJobIDs));
+    }
 
     // Add new jobs
     for (let i = 0; i < jobsToAdd.length; i++) {
