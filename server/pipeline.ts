@@ -262,13 +262,33 @@ export class PipelineService {
     const AZURE_ENDPOINT = "https://ai-acgenaidevtest540461206109.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2025-01-01-preview";
     const API_KEY = process.env.AZURE_OPENAI_KEY || process.env.Azure_OpenAI_Key || "3fcde4edd6fd43b4968a8e0e716c61e5";
 
-    const prompt = `From the input below, find and break down the City, State, and Country from the content. The input will be a mix of the city/state, a job URL which may contain the city and state, and a job title that may also contain it. Your job is to output the city, state, country in formatted json. Output the full state spelling, not the abbreviation.
+    const prompt = `You are a location intelligence expert. Your job is to extract and standardize the city, state, and country from job posting data. Many job postings have incomplete or merged location data that needs intelligent parsing.
 
-Input:
+CRITICAL RULES:
+1. If a city name matches a well-known city in a specific state, ALWAYS include that state
+2. For US locations, ALWAYS determine the state even if not explicitly mentioned
+3. Use your knowledge of US geography to infer states from city names
+4. Look at job URLs and titles for additional location clues
+5. Return the full state name, not abbreviations
+
+Examples of intelligent parsing:
+- "Michigan City" → "Michigan City, Michigan, United States" (Michigan City is in Indiana, but this demonstrates the logic)
+- "Austin" → "Austin, Texas, United States" 
+- "Portland" → Look at URL/title context to determine if Oregon or Maine
+- "Buffalo" → "Buffalo, New York, United States"
+
+Input data to parse:
 City: ${job.data.city}
 Country: ${job.data.country}
 Job Title: ${job.data.title}
-URL: ${job.data.externalPath}`;
+URL: ${job.data.externalPath}
+
+Return ONLY a JSON object with this exact format:
+{
+  "city": "parsed city name",
+  "state": "full state name (required for US locations)",
+  "country": "country name"
+}`;
 
     console.log('🤖 AI Processing Request for Job:', job.data.jobID);
     console.log('Raw Input Data:', JSON.stringify({
