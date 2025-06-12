@@ -1,4 +1,5 @@
 import { storage } from './storage';
+import { WebSocket } from 'ws';
 
 interface AlgoliaJob {
   data: {
