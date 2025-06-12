@@ -440,12 +440,12 @@ REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
     console.log('Sample existing job:', existingJobs[0] ? JSON.stringify(existingJobs[0], null, 2) : 'No existing jobs');
     
     const existingJobIDs = new Set(existingJobs.map(job => job.jobID).filter(Boolean));
-    const newJobIDs = new Set(enrichedJobs.map(job => job.data.jobID));
+    const newJobIDs = new Set(enrichedJobs.map(job => String(job.data.jobID)));
     console.log('Existing job IDs count:', existingJobIDs.size);
     console.log('New job IDs count:', newJobIDs.size);
 
     // Find jobs to remove (in database but not in new data)
-    const jobsToRemove = existingJobs.filter(job => job.jobID && !newJobIDs.has(job.jobID));
+    const jobsToRemove = existingJobs.filter(job => job.jobID && !newJobIDs.has(String(job.jobID)));
     const removedJobIDs = jobsToRemove.map(job => job.jobID).filter(Boolean);
     console.log('🗑️ Jobs to remove:', removedJobIDs.length);
 
@@ -458,7 +458,7 @@ REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
     }
 
     // Find jobs to add (in new data but not in database)
-    const jobsToAdd = enrichedJobs.filter(job => !existingJobIDs.has(job.data.jobID));
+    const jobsToAdd = enrichedJobs.filter(job => !existingJobIDs.has(String(job.data.jobID)));
     console.log('🆕 New jobs to add:', jobsToAdd.length);
 
     // Add new jobs
@@ -502,11 +502,21 @@ REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
       console.log('Job data to insert:', JSON.stringify(jobData, null, 2));
 
       try {
+        console.log('📤 Attempting to insert job into database...');
         const createdJob = await storage.createJobPosting(jobData);
         console.log('✅ Successfully created job:', createdJob.jobID || createdJob.id);
       } catch (error: any) {
         console.error(`🚨 Failed to create job ${job.data.jobID}:`, error.message);
-        console.error('Error details:', error);
+        console.error('🔍 Full error details:', JSON.stringify(error, null, 2));
+        console.error('📋 Job data that failed:', JSON.stringify(jobData, null, 2));
+        
+        // Log specific validation issues
+        if (error.code === 'EPARAM') {
+          console.error('💡 Parameter validation error - checking data types...');
+          Object.entries(jobData).forEach(([key, value]) => {
+            console.error(`  ${key}: ${typeof value} = ${value}`);
+          });
+        }
       }
     }
 
