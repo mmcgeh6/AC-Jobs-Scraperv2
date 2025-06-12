@@ -237,16 +237,33 @@ export class AzurePipelineService {
   }
 
   private async processLocationWithAI(job: AlgoliaJob): Promise<AILocationResponse> {
-    const locationText = `${job.data.city}, ${job.data.country}`;
+    // Build comprehensive job context using all available information
+    const jobTitle = job.data.title || '';
+    const jobUrl = job.data.externalPath || '';
+    const city = job.data.city || '';
+    const country = job.data.country || '';
+    const description = job.data.businessArea || '';
     
-    const prompt = `Extract and standardize the location information from this job posting location: "${locationText}"
+    const prompt = `Analyze this job posting and extract the complete location information:
 
-Please return a JSON object with these exact fields:
+Job Title: ${jobTitle}
+Job URL: ${jobUrl}
+Location: ${city}, ${country}
+Description: ${description}
+
+Based on this job information, determine the full standardized location. Use the job title, URL domain, and description context to help identify the specific state/province for "${city}" in ${country}.
+
+Return a JSON object with these exact fields:
 - city: The city name (standardized)
 - state: The state/province name (full name, not abbreviation)
 - country: The country name (standardized)
 
-If state/province cannot be determined, use null. Ensure proper capitalization.`;
+For US locations, always include the state. Examples:
+- Houston → Texas
+- Michigan City → Indiana
+- Charlotte → North Carolina
+
+Use the job context and URL to determine the most accurate location.`;
 
     try {
       const response = await fetch(
