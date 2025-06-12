@@ -1,4 +1,4 @@
-const XLSX = require('xlsx');
+import XLSX from 'xlsx';
 
 async function examineZipcodeFile() {
   try {
@@ -20,7 +20,7 @@ async function examineZipcodeFile() {
     
     // Show first 5 rows
     console.log('\nFirst 5 rows:');
-    data.slice(0, 5).forEach((row: any, index: number) => {
+    data.slice(0, 5).forEach((row, index) => {
       console.log(`Row ${index + 1}:`, row);
     });
     
