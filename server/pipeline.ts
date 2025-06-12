@@ -123,6 +123,20 @@ export class PipelineService {
             ...coordinates
           };
           
+          console.log('🔍 Enriched Job Structure:', JSON.stringify({
+            jobID: job.data.jobID,
+            originalCity: job.data.city,
+            aiCity: aiResult.city,
+            aiState: aiResult.state,
+            aiCountry: aiResult.country,
+            coordinates: coordinates,
+            finalJobStructure: {
+              city: enrichedJob.city,
+              state: enrichedJob.state,
+              country: enrichedJob.country
+            }
+          }, null, 2));
+          
           enrichedJobs.push(enrichedJob);
           
           // Store processed job data for dashboard viewing
@@ -262,31 +276,29 @@ export class PipelineService {
     const AZURE_ENDPOINT = "https://ai-acgenaidevtest540461206109.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2025-01-01-preview";
     const API_KEY = process.env.AZURE_OPENAI_KEY || process.env.Azure_OpenAI_Key || "3fcde4edd6fd43b4968a8e0e716c61e5";
 
-    const prompt = `You are a location intelligence expert. Your job is to extract and standardize the city, state, and country from job posting data. Many job postings have incomplete or merged location data that needs intelligent parsing.
+    const prompt = `You are a US geography expert specializing in location standardization. Your task is to extract city, state, and country from job data, with MANDATORY state identification for US locations.
 
-CRITICAL RULES:
-1. If a city name matches a well-known city in a specific state, ALWAYS include that state
-2. For US locations, ALWAYS determine the state even if not explicitly mentioned
-3. Use your knowledge of US geography to infer states from city names
-4. Look at job URLs and titles for additional location clues
-5. Return the full state name, not abbreviations
+ABSOLUTE REQUIREMENTS:
+1. For ANY US location, you MUST provide the state name - this is non-negotiable
+2. Use your geographic knowledge to identify which state each city belongs to
+3. Return full state names (e.g., "Texas", "California", "New York")
+4. Never leave the state field empty for US locations
 
-Examples of intelligent parsing:
-- "Michigan City" → "Michigan City, Michigan, United States" (Michigan City is in Indiana, but this demonstrates the logic)
-- "Austin" → "Austin, Texas, United States" 
-- "Portland" → Look at URL/title context to determine if Oregon or Maine
-- "Buffalo" → "Buffalo, New York, United States"
+SPECIFIC EXAMPLES:
+- Input: "Michigan City, United States" → Output: {"city": "Michigan City", "state": "Indiana", "country": "United States"}
+- Input: "Houston, United States" → Output: {"city": "Houston", "state": "Texas", "country": "United States"}
+- Input: "Charlotte, United States" → Output: {"city": "Charlotte", "state": "North Carolina", "country": "United States"}
 
-Input data to parse:
+JOB DATA TO PROCESS:
 City: ${job.data.city}
 Country: ${job.data.country}
 Job Title: ${job.data.title}
 URL: ${job.data.externalPath}
 
-Return ONLY a JSON object with this exact format:
+REQUIRED OUTPUT FORMAT (state field MUST be populated for US locations):
 {
-  "city": "parsed city name",
-  "state": "full state name (required for US locations)",
+  "city": "standardized city name",
+  "state": "full state name - REQUIRED for US",
   "country": "country name"
 }`;
 
@@ -339,9 +351,18 @@ Return ONLY a JSON object with this exact format:
         const parsed = JSON.parse(content);
         console.log('✅ Successfully Parsed AI Result:', JSON.stringify(parsed, null, 2));
         
+        // Ensure state is properly extracted for US locations
+        let finalState = parsed.state || '';
+        
+        // If state is missing but country is US, try to infer from city
+        if (!finalState && (parsed.country === 'United States' || job.data.country === 'United States')) {
+          const cityName = parsed.city || job.data.city;
+          finalState = this.inferStateFromCity(cityName);
+        }
+
         const finalResult = {
           city: parsed.city || job.data.city,
-          state: parsed.state || '',
+          state: finalState,
           country: parsed.country || job.data.country
         };
         console.log('🎯 Final AI Processing Result:', JSON.stringify(finalResult, null, 2));
@@ -492,6 +513,69 @@ Return ONLY a JSON object with this exact format:
 
   getProcessedJobs(): any[] {
     return this.processedJobs;
+  }
+
+  private inferStateFromCity(cityName: string): string {
+    // Common city-to-state mappings for major cities
+    const cityStateMap: { [key: string]: string } = {
+      'Michigan City': 'Indiana',
+      'Houston': 'Texas',
+      'Charlotte': 'North Carolina',
+      'Austin': 'Texas',
+      'Dallas': 'Texas',
+      'Phoenix': 'Arizona',
+      'Atlanta': 'Georgia',
+      'Chicago': 'Illinois',
+      'New York': 'New York',
+      'Los Angeles': 'California',
+      'San Francisco': 'California',
+      'Seattle': 'Washington',
+      'Miami': 'Florida',
+      'Boston': 'Massachusetts',
+      'Denver': 'Colorado',
+      'Portland': 'Oregon',
+      'Buffalo': 'New York',
+      'Nashville': 'Tennessee',
+      'Memphis': 'Tennessee',
+      'Detroit': 'Michigan',
+      'Minneapolis': 'Minnesota',
+      'Kansas City': 'Missouri',
+      'San Antonio': 'Texas',
+      'Philadelphia': 'Pennsylvania',
+      'San Diego': 'California',
+      'Las Vegas': 'Nevada',
+      'Cleveland': 'Ohio',
+      'Columbus': 'Ohio',
+      'Cincinnati': 'Ohio',
+      'Pittsburgh': 'Pennsylvania',
+      'Baltimore': 'Maryland',
+      'Washington': 'District of Columbia',
+      'Richmond': 'Virginia',
+      'Norfolk': 'Virginia',
+      'Raleigh': 'North Carolina',
+      'Jacksonville': 'Florida',
+      'Tampa': 'Florida',
+      'Orlando': 'Florida',
+      'New Orleans': 'Louisiana',
+      'Birmingham': 'Alabama',
+      'Louisville': 'Kentucky',
+      'Indianapolis': 'Indiana',
+      'Milwaukee': 'Wisconsin',
+      'Omaha': 'Nebraska',
+      'Salt Lake City': 'Utah',
+      'Albuquerque': 'New Mexico',
+      'Tucson': 'Arizona',
+      'Fresno': 'California',
+      'Sacramento': 'California',
+      'Long Beach': 'California',
+      'Mesa': 'Arizona',
+      'Virginia Beach': 'Virginia',
+      'Colorado Springs': 'Colorado',
+      'Reno': 'Nevada'
+    };
+
+    const normalizedCity = cityName.replace(/,.*$/, '').trim();
+    return cityStateMap[normalizedCity] || '';
   }
 
   private getStateAbbreviation(stateName: string): string {
