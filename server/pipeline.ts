@@ -193,13 +193,31 @@ export class PipelineService {
       throw new Error('Algolia credentials not found in environment variables');
     }
 
+    // First, try to get list of available indexes to help user configure
+    try {
+      const indexResponse = await fetch(`https://${APP_ID}-dsn.algolia.net/1/indexes`, {
+        headers: {
+          'X-Algolia-Application-Id': APP_ID,
+          'X-Algolia-API-Key': API_KEY,
+        }
+      });
+
+      if (indexResponse.ok) {
+        const indexes = await indexResponse.json();
+        console.log('Available Algolia indexes:', indexes.items?.map((idx: any) => idx.name));
+      }
+    } catch (e) {
+      console.log('Could not fetch index list');
+    }
+
     const allJobs: AlgoliaJob[] = [];
     let page = 0;
     let hasMore = true;
+    const indexName = process.env.ALGOLIA_INDEX_NAME || 'prod_jobs'; // Common job index names
 
-    while (hasMore) {
+    while (hasMore && page < 10) { // Limit to prevent infinite loops
       try {
-        const response = await fetch(`https://${APP_ID}-dsn.algolia.net/1/indexes/*/queries`, {
+        const response = await fetch(`https://${APP_ID}-dsn.algolia.net/1/indexes/${indexName}/query`, {
           method: 'POST',
           headers: {
             'X-Algolia-Application-Id': APP_ID,
@@ -207,29 +225,57 @@ export class PipelineService {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            requests: [{
-              indexName: 'your_job_index', // Replace with your actual index name
-              params: `page=${page}&hitsPerPage=1000&query=*`
-            }]
+            query: '',
+            page: page,
+            hitsPerPage: 1000
           })
         });
 
         if (!response.ok) {
-          throw new Error(`Algolia API error: ${response.status} ${response.statusText}`);
+          const errorText = await response.text();
+          throw new Error(`Algolia API error: ${response.status} ${response.statusText} - ${errorText}`);
         }
 
-        const result = await response.json();
-        const searchResult = result.results[0] as AlgoliaResponse;
+        const searchResult = await response.json() as AlgoliaResponse;
         
-        allJobs.push(...searchResult.hits);
+        if (searchResult.hits && searchResult.hits.length > 0) {
+          allJobs.push(...searchResult.hits);
+        }
         
         page++;
-        hasMore = page < searchResult.nbPages;
+        hasMore = page < (searchResult.nbPages || 1) && searchResult.hits.length > 0;
         
         // Add small delay to respect rate limits
         await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching from Algolia:', error);
+        
+        // If index not found, try common variations
+        if (error.message.includes('404') && page === 0) {
+          const commonNames = ['jobs', 'job_postings', 'careers', 'positions', 'job_listings'];
+          for (const name of commonNames) {
+            try {
+              const testResponse = await fetch(`https://${APP_ID}-dsn.algolia.net/1/indexes/${name}/query`, {
+                method: 'POST',
+                headers: {
+                  'X-Algolia-Application-Id': APP_ID,
+                  'X-Algolia-API-Key': API_KEY,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ query: '', hitsPerPage: 1 })
+              });
+              
+              if (testResponse.ok) {
+                console.log(`Found working index: ${name}`);
+                // Retry with found index
+                return this.fetchJobsFromAlgolia();
+              }
+            } catch (e) {
+              // Continue trying
+            }
+          }
+        }
+        
         throw error;
       }
     }
@@ -345,8 +391,9 @@ URL: ${job.data.externalPath}`;
     const removedJobIDs = jobsToRemove.map(job => job.jobID).filter(Boolean);
 
     // Remove old jobs
-    if (removedJobIDs.length > 0) {
-      await storage.deleteJobPostingsByJobIDs(removedJobIDs);
+    const validRemovedJobIDs = removedJobIDs.filter((id): id is string => id !== null);
+    if (validRemovedJobIDs.length > 0) {
+      await storage.deleteJobPostingsByJobIDs(validRemovedJobIDs);
     }
 
     // Find jobs to add (in new data but not in database)
