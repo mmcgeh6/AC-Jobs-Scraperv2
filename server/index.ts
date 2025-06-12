@@ -1,4 +1,23 @@
+import dotenv from "dotenv";
+import path from "path";
+
+// Load environment variables from .env file in project root
+const envPath = path.resolve(process.cwd(), '.env');
+console.log('Loading .env from:', envPath);
+const result = dotenv.config({ path: envPath });
+
+if (result.error) {
+  console.error('Failed to load .env file:', result.error);
+} else {
+  console.log('Environment variables loaded successfully');
+  console.log('DATABASE_URL present:', !!process.env.DATABASE_URL);
+}
+
 import express, { type Request, Response, NextFunction } from "express";
+
+// Import and initialize storage after environment variables are loaded
+console.log('Initializing storage with DATABASE_URL:', !!process.env.DATABASE_URL);
+
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 

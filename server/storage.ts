@@ -133,11 +133,24 @@ export class MemStorage implements IStorage {
 
 import { SQLStorage } from "./sql-storage";
 
-// Use SQL storage if DATABASE_URL is provided, otherwise fall back to memory storage
-console.log('🔍 Storage initialization check:');
-console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
-console.log('DATABASE_URL value:', process.env.DATABASE_URL ? 'Present' : 'Missing');
+// Lazy initialization to ensure environment variables are loaded
+let _storage: IStorage | null = null;
 
-export const storage = process.env.DATABASE_URL ? new SQLStorage() : new MemStorage();
+export function getStorage(): IStorage {
+  if (!_storage) {
+    console.log('🔍 Storage initialization check:');
+    console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+    console.log('DATABASE_URL value:', process.env.DATABASE_URL ? 'Present' : 'Missing');
 
-console.log('📊 Storage type selected:', storage.constructor.name);
+    _storage = process.env.DATABASE_URL ? new SQLStorage() : new MemStorage();
+    console.log('📊 Storage type selected:', _storage.constructor.name);
+  }
+  return _storage;
+}
+
+// Backward compatibility export
+export const storage = new Proxy({} as IStorage, {
+  get(target, prop) {
+    return getStorage()[prop as keyof IStorage];
+  }
+});
