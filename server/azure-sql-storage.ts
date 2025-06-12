@@ -100,6 +100,7 @@ export class AzureSQLStorage implements IStorage {
               city NVARCHAR(100),
               state NVARCHAR(100),
               country NVARCHAR(100),
+              zipcode NVARCHAR(20),
               latitude DECIMAL(10, 8),
               longitude DECIMAL(11, 8),
               location_point GEOGRAPHY,
@@ -117,11 +118,25 @@ export class AzureSQLStorage implements IStorage {
       END
     `;
 
+    // Add zipcode column to existing table if it doesn't exist
+    const addZipcodeColumnSQL = `
+      IF NOT EXISTS (
+          SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
+          WHERE TABLE_NAME = 'job_posting_listings' AND COLUMN_NAME = 'zipcode'
+      )
+      BEGIN
+          ALTER TABLE job_posting_listings 
+          ADD zipcode NVARCHAR(20);
+      END
+    `;
+
     try {
       await request.query(createTableSQL);
+      await request.query(addZipcodeColumnSQL);
       console.log('✅ Azure SQL table job_posting_listings ready');
     } catch (error) {
-      console.log('Table creation skipped or already exists:', error.message);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.log('Table creation skipped or already exists:', errorMessage);
     }
   }
 
@@ -134,6 +149,7 @@ export class AzureSQLStorage implements IStorage {
       city: azure.city || null,
       state: azure.state || null,
       country: azure.country || null,
+      zipcode: azure.zipcode || null,
       latitude: azure.latitude || null,
       longitude: azure.longitude || null,
       locationPoint: azure.location_point || null,
@@ -196,6 +212,7 @@ export class AzureSQLStorage implements IStorage {
         city: job.city ? String(job.city).trim() : null,
         state: job.state ? String(job.state).trim() : null,
         country: job.country ? String(job.country).trim() : null,
+        zipcode: job.zipcode ? String(job.zipcode).trim() : null,
         latitude: job.latitude ? parseFloat(String(job.latitude)) : null,
         longitude: job.longitude ? parseFloat(String(job.longitude)) : null,
         description: job.description ? String(job.description).trim() : null,
@@ -213,6 +230,7 @@ export class AzureSQLStorage implements IStorage {
       request.input('city', sql.NVarChar, validatedJob.city);
       request.input('state', sql.NVarChar, validatedJob.state);
       request.input('country', sql.NVarChar, validatedJob.country);
+      request.input('zipcode', sql.NVarChar, validatedJob.zipcode);
       request.input('latitude', sql.Decimal(10, 8), validatedJob.latitude);
       request.input('longitude', sql.Decimal(11, 8), validatedJob.longitude);
       request.input('description', sql.NVarChar, validatedJob.description);
@@ -228,9 +246,9 @@ export class AzureSQLStorage implements IStorage {
 
       const insertSQL = `
         INSERT INTO job_posting_listings 
-        (job_id, job_url, title, city, state, country, latitude, longitude, location_point, description, company_name)
+        (job_id, job_url, title, city, state, country, zipcode, latitude, longitude, location_point, description, company_name)
         OUTPUT INSERTED.*
-        VALUES (@jobId, @jobUrl, @title, @city, @state, @country, @latitude, @longitude, @locationPoint, @description, @companyName)
+        VALUES (@jobId, @jobUrl, @title, @city, @state, @country, @zipcode, @latitude, @longitude, @locationPoint, @description, @companyName)
       `;
 
       const result = await request.query(insertSQL);
