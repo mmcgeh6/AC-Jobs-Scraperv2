@@ -134,4 +134,10 @@ export class MemStorage implements IStorage {
 import { SQLStorage } from "./sql-storage";
 
 // Use SQL storage if DATABASE_URL is provided, otherwise fall back to memory storage
+console.log('🔍 Storage initialization check:');
+console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+console.log('DATABASE_URL value:', process.env.DATABASE_URL ? 'Present' : 'Missing');
+
 export const storage = process.env.DATABASE_URL ? new SQLStorage() : new MemStorage();
+
+console.log('📊 Storage type selected:', storage.constructor.name);

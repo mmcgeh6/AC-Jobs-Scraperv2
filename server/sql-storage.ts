@@ -43,10 +43,21 @@ let pool: sql.ConnectionPool;
 
 async function initializeConnection() {
   if (!pool) {
-    const config = parseJdbcConnectionString(connectionString);
-    pool = new sql.ConnectionPool(config);
-    await pool.connect();
-    console.log('Connected to Azure SQL Database');
+    try {
+      const config = parseJdbcConnectionString(connectionString);
+      console.log('Attempting to connect to Azure SQL with config:', {
+        server: config.server,
+        database: config.database,
+        user: config.user,
+        port: config.port
+      });
+      pool = new sql.ConnectionPool(config);
+      await pool.connect();
+      console.log('✅ Successfully connected to Azure SQL Database');
+    } catch (error) {
+      console.error('❌ Failed to connect to Azure SQL Database:', error);
+      throw error;
+    }
   }
   return pool;
 }

@@ -81,10 +81,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/jobs', async (req, res) => {
     try {
+      console.log('🔍 Testing database connection and retrieving jobs...');
       const jobs = await storage.getAllJobPostings();
+      console.log('📊 Retrieved jobs count:', jobs.length);
+      console.log('Sample job:', jobs[0] ? JSON.stringify(jobs[0], null, 2) : 'No jobs found');
       res.json(jobs);
     } catch (error: any) {
-      console.error('Failed to get jobs:', error);
+      console.error('❌ Failed to get jobs:', error);
       res.status(500).json({ message: 'Failed to get jobs', error: error.message });
     }
   });
