@@ -40,11 +40,9 @@ export const activityLogs = pgTable("activity_logs", {
   executionId: integer("executionId").references(() => pipelineExecutions.id),
 });
 
-export const insertJobPostingSchema = createInsertSchema(jobPostings).omit({
+export const insertJobPostingListingSchema = createInsertSchema(jobPostingListings).omit({
   id: true,
-  record_created_on: true,
-  created_at: true,
-  last_seen: true,
+  createdAt: true,
 });
 
 export const insertPipelineExecutionSchema = createInsertSchema(pipelineExecutions).omit({
@@ -56,8 +54,8 @@ export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({
   timestamp: true,
 });
 
-export type JobPosting = typeof jobPostings.$inferSelect;
-export type InsertJobPosting = z.infer<typeof insertJobPostingSchema>;
+export type JobPostingListing = typeof jobPostingListings.$inferSelect;
+export type InsertJobPostingListing = z.infer<typeof insertJobPostingListingSchema>;
 export type PipelineExecution = typeof pipelineExecutions.$inferSelect;
 export type InsertPipelineExecution = z.infer<typeof insertPipelineExecutionSchema>;
 export type ActivityLog = typeof activityLogs.$inferSelect;
