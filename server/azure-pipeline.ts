@@ -295,18 +295,39 @@ Use the job context and URL to determine the most accurate location.`;
       const content = data.choices[0].message.content;
       
       try {
-        const parsed = JSON.parse(content);
+        // Clean the response by removing markdown code blocks
+        let cleanContent = content.trim();
+        if (cleanContent.includes('```json')) {
+          const jsonStart = cleanContent.indexOf('{');
+          const jsonEnd = cleanContent.lastIndexOf('}') + 1;
+          cleanContent = cleanContent.substring(jsonStart, jsonEnd);
+        }
+        
+        const parsed = JSON.parse(cleanContent);
+        console.log(`✅ Successfully parsed AI response for ${job.data.city}: city=${parsed.city}, state=${parsed.state}, country=${parsed.country}`);
         return {
           city: parsed.city || job.data.city,
           state: parsed.state || null,
           country: parsed.country || job.data.country,
         };
       } catch (parseError) {
-        console.warn('Failed to parse AI response, using fallback:', content);
+        console.warn('⚠️ JSON parse failed, extracting with regex from:', content.substring(0, 200));
+        
+        // Improved regex patterns to extract location data from various formats
+        const cityMatch = content.match(/"city":\s*"([^"]+)"/i) || content.match(/city.*?:\s*"?([^",\n]+)"?/i);
+        const stateMatch = content.match(/"state":\s*"([^"]+)"/i) || content.match(/state.*?:\s*"?([^",\n]+)"?/i);
+        const countryMatch = content.match(/"country":\s*"([^"]+)"/i) || content.match(/country.*?:\s*"?([^",\n]+)"?/i);
+        
+        const extractedCity = cityMatch?.[1]?.trim() || job.data.city;
+        const extractedState = stateMatch?.[1]?.trim() || null;
+        const extractedCountry = countryMatch?.[1]?.trim() || job.data.country;
+        
+        console.log(`🔍 Regex extracted for ${job.data.city}: city=${extractedCity}, state=${extractedState}, country=${extractedCountry}`);
+        
         return {
-          city: job.data.city,
-          state: null,
-          country: job.data.country,
+          city: extractedCity,
+          state: extractedState,
+          country: extractedCountry,
         };
       }
     } catch (error) {
