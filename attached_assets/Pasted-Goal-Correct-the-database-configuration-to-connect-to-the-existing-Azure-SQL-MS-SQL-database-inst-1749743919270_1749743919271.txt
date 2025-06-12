@@ -1,0 +1,117 @@
+Goal: Correct the database configuration to connect to the existing Azure SQL (MS SQL) database instead of PostgreSQL.
+
+Step 1: Install the Correct Database Driver
+First, we need to install the Drizzle Kit driver for Microsoft SQL Server.
+
+Please run the following command in the shell:
+npm install mssql-jdbc
+
+And uninstall the PostgreSQL driver, as it's not needed:
+npm uninstall pg
+
+Step 2: Update Drizzle Configuration
+Now, modify the drizzle.config.ts file to use the mssql dialect.
+
+TypeScript
+
+// drizzle.config.ts
+import { defineConfig } from "drizzle-kit";
+
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL, ensure the database is provisioned");
+}
+
+export default defineConfig({
+  out: "./migrations",
+  schema: "./shared/schema.ts",
+  dialect: "mssql", // Changed from "postgresql"
+  driver: "mssql-jdbc", // Added driver
+  dbCredentials: {
+    url: process.env.DATABASE_URL,
+  },
+});
+Step 3: Update the SQL Storage Module
+The server/SQLStorage.ts file needs to be updated to use the mssql client instead of the pg client.
+
+TypeScript
+
+// server/SQLStorage.ts
+
+import { drizzle } from "drizzle-orm/mssql";
+import { ConnectionPool } from "mssql-jdbc";
+import { inArray, eq, desc } from "drizzle-orm";
+import {
+  jobPostings,
+  pipelineExecutions,
+  activityLogs,
+  type JobPosting,
+  type InsertJobPosting,
+  type PipelineExecution,
+  type InsertPipelineExecution,
+  type ActivityLog,
+  type InsertActivityLog,
+} from "@shared/schema";
+import type { IStorage } from "./storage";
+
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL environment variable is not set");
+}
+
+const pool = new ConnectionPool(process.env.DATABASE_URL);
+const db = drizzle(pool, { schema: { jobPostings, pipelineExecutions, activityLogs } });
+
+export class SQLStorage implements IStorage {
+  async getAllJobPostings(): Promise<JobPosting[]> {
+    return await db.select().from(jobPostings);
+  }
+
+  async getJobPostingByJobID(jobID: string): Promise<JobPosting | undefined> {
+    const results = await db.select().from(jobPostings).where(eq(jobPostings.jobID, jobID)).limit(1);
+    return results[0];
+  }
+
+  async createJobPosting(job: InsertJobPosting): Promise<JobPosting> {
+    const [newJob] = await db.insert(jobPostings).values(job).returning();
+    return newJob;
+  }
+  
+  async deleteJobPosting(jobID: string): Promise<void> {
+     await db.delete(jobPostings).where(eq(jobPostings.jobID, jobID));
+  }
+
+  async deleteJobPostingsByJobIDs(jobIDs: string[]): Promise<void> {
+    if (jobIDs.length === 0) return;
+    const nonNullJobIds = jobIDs.filter((id): id is string => id !== null);
+    if (nonNullJobIds.length > 0) {
+      await db.delete(jobPostings).where(inArray(jobPostings.jobID, nonNullJobIds));
+    }
+  }
+
+  async createPipelineExecution(execution: InsertPipelineExecution): Promise<PipelineExecution> {
+    const [newExecution] = await db.insert(pipelineExecutions).values(execution).returning();
+    return newExecution;
+  }
+
+  async updatePipelineExecution(id: number, updates: Partial<PipelineExecution>): Promise<PipelineExecution> {
+    const [updatedExecution] = await db.update(pipelineExecutions).set(updates).where(eq(pipelineExecutions.id, id)).returning();
+    return updatedExecution;
+  }
+
+  async getLatestPipelineExecution(): Promise<PipelineExecution | undefined> {
+    const results = await db.select().from(pipelineExecutions).orderBy(desc(pipelineExecutions.id)).limit(1);
+    return results[0];
+  }
+
+  async createActivityLog(log: InsertActivityLog): Promise<ActivityLog> {
+    const [newLog] = await db.insert(activityLogs).values(log).returning();
+    return newLog;
+  }
+  
+  async getRecentActivityLogs(limit = 20): Promise<ActivityLog[]> {
+    return await db.select().from(activityLogs).orderBy(desc(activityLogs.id)).limit(limit);
+  }
+
+  async clearActivityLogs(): Promise<void> {
+    await db.delete(activityLogs);
+  }
+}

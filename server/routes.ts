@@ -69,7 +69,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/processed-jobs', async (req, res) => {
+  app.get('/api/pipeline/processed-jobs', async (req, res) => {
     try {
       const processedJobs = pipelineService.getProcessedJobs();
       res.json(processedJobs);

@@ -96,11 +96,15 @@ export default function ControlCenter() {
   // Mutations
   const startPipelineMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest(`/api/pipeline/start`, {
+      const response = await fetch('/api/pipeline/start', {
         method: 'POST',
         body: JSON.stringify({ batchSize }),
         headers: { 'Content-Type': 'application/json' }
       });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
     },
     onSuccess: () => {
       toast({
@@ -121,9 +125,13 @@ export default function ControlCenter() {
 
   const clearLogsMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest(`/api/activity-logs/clear`, {
+      const response = await fetch('/api/activity-logs', {
         method: 'DELETE',
       });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
     },
     onSuccess: () => {
       toast({
