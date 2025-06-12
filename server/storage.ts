@@ -142,9 +142,13 @@ export function getStorage(): IStorage {
     console.log('🔍 Storage initialization check:');
     console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
     console.log('DATABASE_URL value:', process.env.DATABASE_URL ? 'Present' : 'Missing');
-    console.log('DATABASE_URL contains jdbc:sqlserver:', process.env.DATABASE_URL?.includes('jdbc:sqlserver:'));
+    const azureUrl = process.env.AZURE_SQL_URL?.replace(/['"]/g, ''); // Remove quotes
+    const dbUrl = process.env.DATABASE_URL?.replace(/['"]/g, ''); // Remove quotes
+    console.log('AZURE_SQL_URL:', azureUrl ? 'Present' : 'Missing');
+    console.log('DATABASE_URL (cleaned):', dbUrl);
+    console.log('Using Azure SQL:', !!azureUrl);
 
-    if (process.env.DATABASE_URL?.includes('jdbc:sqlserver:')) {
+    if (azureUrl || dbUrl?.includes('jdbc:sqlserver:')) {
       console.log('Initializing AzureSQLStorage...');
       _storage = new AzureSQLStorage();
     } else {

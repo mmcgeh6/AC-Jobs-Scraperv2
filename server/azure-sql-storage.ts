@@ -42,9 +42,9 @@ async function initializeConnection(): Promise<sql.ConnectionPool> {
     return globalPool;
   }
 
-  const jdbcUrl = process.env.DATABASE_URL;
+  const jdbcUrl = process.env.AZURE_SQL_URL || process.env.DATABASE_URL;
   if (!jdbcUrl) {
-    throw new Error('DATABASE_URL environment variable is not set');
+    throw new Error('AZURE_SQL_URL or DATABASE_URL environment variable is not set');
   }
 
   const config = parseJdbcConnectionString(jdbcUrl);
