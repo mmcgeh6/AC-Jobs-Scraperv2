@@ -122,26 +122,51 @@ export class SQLStorage implements IStorage {
     request.input('country', sql.VarChar, job.country);
     request.input('latitude', sql.Decimal(10, 8), job.latitude ? parseFloat(job.latitude) : null);
     request.input('longitude', sql.Decimal(11, 8), job.longitude ? parseFloat(job.longitude) : null);
-    request.input('location_point', sql.VarChar, job.location_point);
+    
+    // Create geography point if coordinates are available
+    const lat = job.latitude ? parseFloat(job.latitude) : null;
+    const lng = job.longitude ? parseFloat(job.longitude) : null;
+    const hasValidCoords = lat !== null && lng !== null && lat !== 0 && lng !== 0;
     request.input('job_details_json', sql.VarChar, job.job_details_json);
     request.input('status', sql.VarChar, job.status || 'Active');
     request.input('is_expired', sql.Bit, job.is_expired || false);
     request.input('lastDayToApply', sql.DateTime, job.lastDayToApply);
     request.input('businessArea', sql.VarChar, job.businessArea);
     
-    const result = await request.query(`
-      INSERT INTO job_postings (
-        jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
-        location_city, location_state, state_abbrev, zip_code, country, latitude, longitude,
-        location_point, job_details_json, status, is_expired, lastDayToApply, businessArea
-      )
-      OUTPUT INSERTED.*
-      VALUES (
-        @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
-        @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude,
-        @location_point, @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
-      )
-    `);
+    let insertQuery;
+    if (hasValidCoords) {
+      // Use native geography data type for proper geospatial support
+      insertQuery = `
+        INSERT INTO job_postings (
+          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
+          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude,
+          location_point, job_details_json, status, is_expired, lastDayToApply, businessArea
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
+          @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude,
+          geography::Point(@latitude, @longitude, 4326), @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
+        )
+      `;
+    } else {
+      // Insert without geography point for invalid coordinates
+      insertQuery = `
+        INSERT INTO job_postings (
+          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
+          location_city, location_state, state_abbrev, zip_code, country, latitude, longitude,
+          job_details_json, status, is_expired, lastDayToApply, businessArea
+        )
+        OUTPUT INSERTED.*
+        VALUES (
+          @jobID, @title, @description, @full_text, @url, @company_name, @brand, @functional_area, @work_type,
+          @location_city, @location_state, @state_abbrev, @zip_code, @country, @latitude, @longitude,
+          @job_details_json, @status, @is_expired, @lastDayToApply, @businessArea
+        )
+      `;
+    }
+    
+    const result = await request.query(insertQuery);
     return result.recordset[0];
   }
   

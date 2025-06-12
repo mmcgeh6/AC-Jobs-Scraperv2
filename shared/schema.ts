@@ -27,7 +27,7 @@ export const jobPostings = pgTable("job_postings", {
   created_at: timestamp("created_at").defaultNow(),
   last_seen: timestamp("last_seen").defaultNow(),
   // Internal tracking
-  jobID: text("jobID").unique(), // From Algolia
+  jobID: text("jobID").unique(), // From Algolia - stored as varchar
   lastDayToApply: timestamp("lastDayToApply"),
   businessArea: text("businessArea"),
 });
