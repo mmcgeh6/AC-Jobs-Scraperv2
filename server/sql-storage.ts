@@ -103,7 +103,7 @@ export class SQLStorage implements IStorage {
     const pool = await this.getPool();
     const request = pool.request();
     request.input('jobID', sql.VarChar, jobID);
-    const result = await request.query('SELECT * FROM job_postings WHERE job_id = @jobID');
+    const result = await request.query('SELECT * FROM job_postings WHERE jobID = @jobID');
     return result.recordset[0];
   }
 
@@ -142,9 +142,9 @@ export class SQLStorage implements IStorage {
 
       const insertQuery = `
         INSERT INTO job_postings (
-          job_id, title, description, full_text, url, company_name, brand, functional_area, work_type,
+          jobID, title, description, full_text, url, company_name, brand, functional_area, work_type,
           location_city, location_state, state_abbrev, zip_code, country, latitude, longitude, location_point,
-          job_details_json, status, is_expired, last_day_to_apply, business_area
+          job_details_json, status, is_expired, lastDayToApply, businessArea
         )
         OUTPUT INSERTED.*
         VALUES (

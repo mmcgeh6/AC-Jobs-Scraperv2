@@ -201,7 +201,7 @@ export class PipelineService {
     const existingJobs = await storage.getAllJobPostings();
     console.log('📊 Found', existingJobs.length, 'existing jobs in database');
     
-    const existingJobIDs = new Set(existingJobs.map(j => j.jobID));
+    const existingJobIDs = new Set(existingJobs.map(j => j.jobID).filter(Boolean));
     const newJobIDs = new Set(enrichedJobs.map(j => String(j.data.jobID)));
     
     console.log('🔍 Existing job IDs:', Array.from(existingJobIDs));
@@ -215,7 +215,8 @@ export class PipelineService {
 
     if (jobsToRemove.length > 0) {
       console.log('Removing old jobs...');
-      await storage.deleteJobPostingsByJobIDs(jobsToRemove.map(j => j.jobID!).filter(Boolean));
+      const jobIdsToRemove = jobsToRemove.map(j => j.jobID!).filter(Boolean);
+      await storage.deleteJobPostingsByJobIDs(jobIdsToRemove);
     }
 
     for (const job of jobsToAdd) {
