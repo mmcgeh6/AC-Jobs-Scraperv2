@@ -593,12 +593,14 @@ Use the job context and URL to determine the most accurate location.`;
       `);
 
       if (tableCheck.recordset[0].count > 0) {
-        // Table exists, check if it has data
+        // Table exists, check if it has substantial data
         const dataCheck = await pool.request().query('SELECT COUNT(*) as count FROM us_zipcodes');
-        if (dataCheck.recordset[0].count > 0) {
+        if (dataCheck.recordset[0].count >= 1000) {
           console.log(`✅ us_zipcodes table exists with ${dataCheck.recordset[0].count} records`);
           this.zipcodeTableCreated = true;
           return;
+        } else {
+          console.log(`📊 us_zipcodes table has only ${dataCheck.recordset[0].count} records, repopulating...`);
         }
       }
 
@@ -681,43 +683,9 @@ Use the job context and URL to determine the most accurate location.`;
         console.log(`✅ Loaded ${insertedCount} zipcode records from Excel data`);
         
       } catch (error) {
-        console.warn('Failed to load Excel data, using sample data:', error);
-        
-        // Fallback to sample data
-        const sampleZipcodes = [
-          { postal_code: '10001', city: 'New York', state: 'New York', state_abbrev: 'NY', latitude: 40.7505, longitude: -73.9934 },
-          { postal_code: '90210', city: 'Beverly Hills', state: 'California', state_abbrev: 'CA', latitude: 34.0901, longitude: -118.4065 },
-          { postal_code: '60601', city: 'Chicago', state: 'Illinois', state_abbrev: 'IL', latitude: 41.8827, longitude: -87.6233 },
-          { postal_code: '33101', city: 'Miami', state: 'Florida', state_abbrev: 'FL', latitude: 25.7743, longitude: -80.1937 },
-          { postal_code: '02101', city: 'Boston', state: 'Massachusetts', state_abbrev: 'MA', latitude: 42.3601, longitude: -71.0589 }
-        ];
-
-        let insertedCount = 0;
-        for (const record of sampleZipcodes) {
-          try {
-            await pool.request()
-              .input('postal_code', record.postal_code)
-              .input('city', record.city)
-              .input('state', record.state)
-              .input('state_abbrev', record.state_abbrev)
-              .input('latitude', record.latitude)
-              .input('longitude', record.longitude)
-              .query(`
-                IF NOT EXISTS (SELECT 1 FROM us_zipcodes WHERE postal_code = @postal_code)
-                INSERT INTO us_zipcodes (postal_code, city, state, state_abbrev, latitude, longitude)
-                VALUES (@postal_code, @city, @state, @state_abbrev, @latitude, @longitude)
-              `);
-
-            insertedCount++;
-          } catch (error) {
-            continue;
-          }
-        }
-        
-        console.log(`✅ Loaded ${insertedCount} sample zipcode records`);
+        console.warn('Failed to load Excel data:', error);
       }
 
-      console.log(`✅ Loaded ${insertedCount} zipcode records into Azure SQL`);
       this.zipcodeTableCreated = true;
 
     } catch (error) {
