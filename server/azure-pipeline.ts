@@ -595,12 +595,12 @@ Use the job context and URL to determine the most accurate location.`;
       if (tableCheck.recordset[0].count > 0) {
         // Table exists, check if it has substantial data
         const dataCheck = await pool.request().query('SELECT COUNT(*) as count FROM us_zipcodes');
-        if (dataCheck.recordset[0].count >= 1000) {
+        if (dataCheck.recordset[0].count >= 10000) {
           console.log(`✅ us_zipcodes table exists with ${dataCheck.recordset[0].count} records`);
           this.zipcodeTableCreated = true;
           return;
         } else {
-          console.log(`📊 us_zipcodes table has only ${dataCheck.recordset[0].count} records, repopulating...`);
+          console.log(`📊 us_zipcodes table has only ${dataCheck.recordset[0].count} records, loading comprehensive data...`);
         }
       }
 
@@ -642,7 +642,7 @@ Use the job context and URL to determine the most accurate location.`;
         const zipcodeData = (zipcodeLookup as any).zipcodes;
         let insertedCount = 0;
         let totalProcessed = 0;
-        const MAX_RECORDS = 5000; // Limit for initial population
+        const MAX_RECORDS = 25000; // Comprehensive population
         
         console.log(`📥 Processing zipcode data from ${zipcodeData.size} states...`);
         
@@ -650,7 +650,7 @@ Use the job context and URL to determine the most accurate location.`;
           if (totalProcessed >= MAX_RECORDS) break;
           
           const recordsArray = Array.isArray(records) ? records : [records];
-          const limitedRecords = recordsArray.slice(0, 200); // 200 per state
+          const limitedRecords = recordsArray.slice(0, 1000); // 1000 per state
           
           for (const record of limitedRecords) {
             if (totalProcessed >= MAX_RECORDS) break;
