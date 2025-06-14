@@ -79,20 +79,20 @@ async function completeZipcodePopulation() {
         try {
           const record = row as any;
           
-          if (record.Zip && record.City && record.State) {
+          if (record['postal code'] && record.City && record['State Abbrev']) {
             // Check if record already exists
             const existsResult = await pool.request()
-              .input('postal_code', String(record.Zip))
+              .input('postal_code', String(record['postal code']))
               .query('SELECT COUNT(*) as count FROM us_zipcodes WHERE postal_code = @postal_code');
             
             if (existsResult.recordset[0].count === 0) {
               await pool.request()
-                .input('postal_code', String(record.Zip))
+                .input('postal_code', String(record['postal code']))
                 .input('city', String(record.City))
                 .input('state', String(record.State))
-                .input('state_abbrev', String(record.State))
-                .input('latitude', parseFloat(record.Latitude) || null)
-                .input('longitude', parseFloat(record.Longitude) || null)
+                .input('state_abbrev', String(record['State Abbrev']))
+                .input('latitude', parseFloat(record.latitude) || null)
+                .input('longitude', parseFloat(record.longitude) || null)
                 .query(`
                   INSERT INTO us_zipcodes (postal_code, city, state, state_abbrev, latitude, longitude)
                   VALUES (@postal_code, @city, @state, @state_abbrev, @latitude, @longitude)
