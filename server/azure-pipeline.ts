@@ -477,11 +477,11 @@ Use the job context and URL to determine the most accurate location.`;
 
           let zipcode = postalCode?.long_name || '';
           
-          // If no zipcode found, try database lookup first, then fallback methods
+          // If no zipcode found, try zipcode lookup then API fallback methods
           if (!zipcode && location.city && location.state && location.country === 'United States') {
-            zipcode = await this.lookupZipcodeFromDatabase(location.city, location.state);
+            zipcode = await this.lookupZipcodeFromFile(location.city, location.state);
             
-            // If database lookup fails, try API fallback methods
+            // If file lookup fails, try API fallback methods
             if (!zipcode) {
               zipcode = await this.findCityZipcode(location.city, location.state);
             }
@@ -507,18 +507,18 @@ Use the job context and URL to determine the most accurate location.`;
     return { latitude: '', longitude: '', zipcode: '' };
   }
 
-  private async lookupZipcodeFromDatabase(city: string, state: string): Promise<string> {
+  private async lookupZipcodeFromFile(city: string, state: string): Promise<string> {
     try {
       const { zipcodeLookup } = await import('./zipcode-lookup.js');
       
       // Ensure zipcode data is loaded
       await zipcodeLookup.loadZipcodes();
       
-      // Lookup zipcode from in-memory database
+      // Lookup zipcode from Excel file data
       const zipcode = zipcodeLookup.lookupZipcode(city, state);
       
       if (zipcode) {
-        console.log(`📋 Found zipcode from lookup: ${city}, ${state} → ${zipcode}`);
+        console.log(`📋 Found zipcode from database: ${city}, ${state} → ${zipcode}`);
         return zipcode;
       }
       
@@ -526,6 +526,110 @@ Use the job context and URL to determine the most accurate location.`;
     } catch (error) {
       console.warn(`Zipcode lookup failed for ${city}, ${state}:`, error);
       return '';
+    }
+  }
+
+  private zipcodeTableCreated = false;
+
+  private async ensureZipcodeTable(): Promise<void> {
+    if (this.zipcodeTableCreated) return;
+
+    try {
+      const { AzureSQLStorage } = await import('./azure-sql-storage.js');
+      const storage = new AzureSQLStorage();
+      const pool = await (storage as any).getPool();
+
+      // Check if table exists
+      const tableCheck = await pool.request().query(`
+        SELECT COUNT(*) as count 
+        FROM INFORMATION_SCHEMA.TABLES 
+        WHERE TABLE_NAME = 'us_zipcodes'
+      `);
+
+      if (tableCheck.recordset[0].count > 0) {
+        // Table exists, check if it has data
+        const dataCheck = await pool.request().query('SELECT COUNT(*) as count FROM us_zipcodes');
+        if (dataCheck.recordset[0].count > 0) {
+          console.log(`✅ us_zipcodes table exists with ${dataCheck.recordset[0].count} records`);
+          this.zipcodeTableCreated = true;
+          return;
+        }
+      }
+
+      console.log('🔨 Creating us_zipcodes table in Azure SQL...');
+
+      // Create table
+      await pool.request().query(`
+        IF OBJECT_ID('us_zipcodes', 'U') IS NOT NULL
+          DROP TABLE us_zipcodes
+      `);
+
+      await pool.request().query(`
+        CREATE TABLE us_zipcodes (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          postal_code VARCHAR(10) NOT NULL,
+          city VARCHAR(100) NOT NULL,
+          state VARCHAR(50) NOT NULL,
+          state_abbrev VARCHAR(2) NOT NULL,
+          latitude DECIMAL(10, 6),
+          longitude DECIMAL(10, 6),
+          created_at DATETIME2 DEFAULT GETDATE()
+        )
+      `);
+
+      // Create indexes
+      await pool.request().query(`
+        CREATE INDEX IX_us_zipcodes_city_state ON us_zipcodes(city, state_abbrev)
+      `);
+
+      console.log('✅ Created us_zipcodes table and indexes');
+
+      // Load data from Excel file
+      const XLSX = await import('xlsx');
+      const filePath = 'attached_assets/US Zips with Lat_Long_1749766376077.xlsx';
+      const workbook = XLSX.readFile(filePath);
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(worksheet) as any[];
+
+      console.log(`📊 Loading ${data.length} zipcode records into Azure SQL...`);
+
+      let insertedCount = 0;
+      for (const row of data.slice(0, 5000)) { // Limit to first 5000 for performance
+        try {
+          const postalCode = String(row['postal code'] || '').trim();
+          const city = String(row['City'] || '').trim();
+          const state = String(row['State'] || '').trim();
+          const stateAbbrev = String(row['State Abbrev'] || '').trim();
+          const latitude = parseFloat(row['latitude']) || null;
+          const longitude = parseFloat(row['longitude']) || null;
+
+          if (postalCode && city && state && stateAbbrev) {
+            await pool.request()
+              .input('postal_code', postalCode)
+              .input('city', city)
+              .input('state', state)
+              .input('state_abbrev', stateAbbrev)
+              .input('latitude', latitude)
+              .input('longitude', longitude)
+              .query(`
+                INSERT INTO us_zipcodes (postal_code, city, state, state_abbrev, latitude, longitude)
+                VALUES (@postal_code, @city, @state, @state_abbrev, @latitude, @longitude)
+              `);
+
+            insertedCount++;
+          }
+        } catch (error) {
+          // Skip individual records that fail
+          continue;
+        }
+      }
+
+      console.log(`✅ Loaded ${insertedCount} zipcode records into Azure SQL`);
+      this.zipcodeTableCreated = true;
+
+    } catch (error) {
+      console.warn('Failed to create zipcode table:', error);
+      // Continue without the table, fallback methods will be used
     }
   }
 
