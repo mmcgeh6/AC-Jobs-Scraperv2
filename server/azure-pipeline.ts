@@ -477,11 +477,11 @@ Use the job context and URL to determine the most accurate location.`;
 
           let zipcode = postalCode?.long_name || '';
           
-          // If no zipcode found, try zipcode lookup then API fallback methods
+          // If no zipcode found, try database lookup first, then fallback methods
           if (!zipcode && location.city && location.state && location.country === 'United States') {
-            zipcode = await this.lookupZipcodeFromFile(location.city, location.state);
+            zipcode = await this.lookupZipcodeFromDatabase(location.city, location.state);
             
-            // If file lookup fails, try API fallback methods
+            // If database lookup fails, try API fallback methods
             if (!zipcode) {
               zipcode = await this.findCityZipcode(location.city, location.state);
             }
@@ -507,24 +507,65 @@ Use the job context and URL to determine the most accurate location.`;
     return { latitude: '', longitude: '', zipcode: '' };
   }
 
-  private async lookupZipcodeFromFile(city: string, state: string): Promise<string> {
+  private async lookupZipcodeFromDatabase(city: string, state: string): Promise<string> {
     try {
-      const { zipcodeLookup } = await import('./zipcode-lookup.js');
+      // First ensure the zipcode table exists
+      await this.ensureZipcodeTable();
       
-      // Ensure zipcode data is loaded
-      await zipcodeLookup.loadZipcodes();
+      const { AzureSQLStorage } = await import('./azure-sql-storage.js');
+      const storage = new AzureSQLStorage();
+      const pool = await (storage as any).getPool();
       
-      // Lookup zipcode from Excel file data
-      const zipcode = zipcodeLookup.lookupZipcode(city, state);
+      // First try exact city match with state abbreviation
+      const stateAbbrev = this.getStateAbbreviation(state);
+      let result = await pool.request()
+        .input('city', city)
+        .input('state', stateAbbrev)
+        .query(`
+          SELECT TOP 1 postal_code 
+          FROM us_zipcodes 
+          WHERE LOWER(city) = LOWER(@city) AND state_abbrev = @state
+        `);
       
-      if (zipcode) {
-        console.log(`📋 Found zipcode from database: ${city}, ${state} → ${zipcode}`);
+      if (result.recordset.length > 0) {
+        const zipcode = result.recordset[0].postal_code;
+        console.log(`📋 Found zipcode from SQL: ${city}, ${stateAbbrev} → ${zipcode}`);
+        return zipcode;
+      }
+      
+      // Try with full state name
+      result = await pool.request()
+        .input('city', city)
+        .input('state', state)
+        .query(`
+          SELECT TOP 1 postal_code 
+          FROM us_zipcodes 
+          WHERE LOWER(city) = LOWER(@city) AND LOWER(state) = LOWER(@state)
+        `);
+      
+      if (result.recordset.length > 0) {
+        const zipcode = result.recordset[0].postal_code;
+        console.log(`📋 Found zipcode from SQL: ${city}, ${state} → ${zipcode}`);
         return zipcode;
       }
       
       return '';
     } catch (error) {
-      console.warn(`Zipcode lookup failed for ${city}, ${state}:`, error);
+      console.warn(`SQL zipcode lookup failed for ${city}, ${state}:`, error);
+      
+      // Fallback to in-memory lookup
+      try {
+        const { zipcodeLookup } = await import('./zipcode-lookup.js');
+        await zipcodeLookup.loadZipcodes();
+        const zipcode = zipcodeLookup.lookupZipcode(city, state);
+        if (zipcode) {
+          console.log(`📋 Found zipcode from fallback: ${city}, ${state} → ${zipcode}`);
+          return zipcode;
+        }
+      } catch (fallbackError) {
+        console.warn(`Fallback zipcode lookup failed:`, fallbackError);
+      }
+      
       return '';
     }
   }
