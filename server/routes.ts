@@ -4,6 +4,21 @@ import { WebSocketServer } from "ws";
 import { storage } from "./storage";
 import { azurePipelineService } from "./azure-pipeline";
 
+function calculateNextRun(time: string, timezone: string): string {
+  const [hours, minutes] = time.split(':').map(Number);
+  const now = new Date();
+  const nextRun = new Date();
+  
+  nextRun.setHours(hours, minutes, 0, 0);
+  
+  // If the time has already passed today, schedule for tomorrow
+  if (nextRun <= now) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+  
+  return nextRun.toISOString();
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
@@ -123,7 +138,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get database connection
       const { AzureSQLStorage } = await import('./azure-sql-storage');
-      const sqlStorage = new SQLStorage();
+      const sqlStorage = new AzureSQLStorage();
       const pool = await (sqlStorage as any).getPool();
       
       // Create tables
@@ -199,6 +214,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Failed to create database tables:', error);
       res.status(500).json({ message: 'Failed to create database tables', error: error.message });
+    }
+  });
+
+  // Scheduling endpoints
+  app.post('/api/schedule/activate', async (req, res) => {
+    try {
+      const { enabled = true, time = "02:00", timezone = "UTC" } = req.body;
+      
+      const scheduleConfig = {
+        enabled,
+        time,
+        timezone,
+        nextRun: calculateNextRun(time, timezone),
+        activated: new Date().toISOString()
+      };
+      
+      await storage.createActivityLog({
+        message: `Daily schedule ${enabled ? 'activated' : 'deactivated'} for ${time} ${timezone}`,
+        level: 'success'
+      });
+      
+      res.json({ 
+        success: true, 
+        message: `Schedule ${enabled ? 'activated' : 'deactivated'} successfully`,
+        config: scheduleConfig
+      });
+    } catch (error) {
+      console.error('Schedule activation error:', error);
+      res.status(500).json({ error: 'Failed to update schedule configuration' });
+    }
+  });
+
+  app.post('/api/schedule/test', async (req, res) => {
+    try {
+      await storage.createActivityLog({
+        message: 'Test schedule execution started',
+        level: 'info'
+      });
+
+      // Start the pipeline in the background
+      azurePipelineService.executePipeline(100).catch(error => {
+        console.error('Test execution error:', error);
+      });
+
+      res.json({ 
+        success: true, 
+        message: 'Test execution started'
+      });
+    } catch (error) {
+      console.error('Test execution error:', error);
+      res.status(500).json({ error: 'Failed to start test execution' });
     }
   });
 

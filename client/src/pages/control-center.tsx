@@ -683,11 +683,24 @@ export default function ControlCenter() {
                     <div className="space-y-3">
                       <Button 
                         className="w-full bg-azure-blue hover:bg-azure-blue/90 text-white"
-                        onClick={() => {
-                          toast({
-                            title: "Schedule Activated",
-                            description: "Daily pipeline execution is now scheduled for 2:00 AM UTC.",
-                          });
+                        onClick={async () => {
+                          try {
+                            await apiRequest('/api/schedule/activate', {
+                              method: 'POST',
+                              body: JSON.stringify({ enabled: true, time: "02:00", timezone: "UTC" }),
+                              headers: { 'Content-Type': 'application/json' }
+                            });
+                            toast({
+                              title: "Schedule Activated",
+                              description: "Daily pipeline execution is now scheduled for 2:00 AM UTC.",
+                            });
+                          } catch (error) {
+                            toast({
+                              title: "Error",
+                              description: "Failed to activate schedule. Please try again.",
+                              variant: "destructive"
+                            });
+                          }
                         }}
                       >
                         <Play className="w-4 h-4 mr-2" />
@@ -697,11 +710,24 @@ export default function ControlCenter() {
                       <Button 
                         variant="outline" 
                         className="w-full"
-                        onClick={() => {
-                          toast({
-                            title: "Test Run Started",
-                            description: "Running a test execution to verify the schedule configuration.",
-                          });
+                        onClick={async () => {
+                          try {
+                            await apiRequest('/api/schedule/test', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' }
+                            });
+                            toast({
+                              title: "Test Run Started",
+                              description: "Running a test execution to verify the schedule configuration.",
+                            });
+                            setActiveTab('control');
+                          } catch (error) {
+                            toast({
+                              title: "Error",
+                              description: "Failed to start test execution. Please try again.",
+                              variant: "destructive"
+                            });
+                          }
                         }}
                       >
                         <RefreshCw className="w-4 h-4 mr-2" />
