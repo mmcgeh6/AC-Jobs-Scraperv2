@@ -642,18 +642,13 @@ Use the job context and URL to determine the most accurate location.`;
         const zipcodeData = (zipcodeLookup as any).zipcodes;
         let insertedCount = 0;
         let totalProcessed = 0;
-        const MAX_RECORDS = 25000; // Comprehensive population
         
         console.log(`📥 Processing zipcode data from ${zipcodeData.size} states...`);
         
         for (const [stateKey, records] of zipcodeData.entries()) {
-          if (totalProcessed >= MAX_RECORDS) break;
-          
           const recordsArray = Array.isArray(records) ? records : [records];
-          const limitedRecords = recordsArray.slice(0, 1000); // 1000 per state
           
-          for (const record of limitedRecords) {
-            if (totalProcessed >= MAX_RECORDS) break;
+          for (const record of recordsArray) {
             
             try {
               if (record.postal_code && record.city && record.state_abbrev) {
