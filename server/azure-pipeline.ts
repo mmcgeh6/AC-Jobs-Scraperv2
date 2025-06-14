@@ -625,40 +625,33 @@ Use the job context and URL to determine the most accurate location.`;
 
       console.log('✅ Created us_zipcodes table and indexes');
 
-      // Load data from Excel file
-      const XLSX = await import('xlsx');
-      const filePath = 'attached_assets/US Zips with Lat_Long_1749766376077.xlsx';
-      const workbook = XLSX.readFile(filePath);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(worksheet) as any[];
+      // Load sample zipcode data to populate the table
+      const sampleZipcodes = [
+        { postal_code: '10001', city: 'New York', state: 'New York', state_abbrev: 'NY', latitude: 40.7505, longitude: -73.9934 },
+        { postal_code: '90210', city: 'Beverly Hills', state: 'California', state_abbrev: 'CA', latitude: 34.0901, longitude: -118.4065 },
+        { postal_code: '60601', city: 'Chicago', state: 'Illinois', state_abbrev: 'IL', latitude: 41.8827, longitude: -87.6233 },
+        { postal_code: '33101', city: 'Miami', state: 'Florida', state_abbrev: 'FL', latitude: 25.7743, longitude: -80.1937 },
+        { postal_code: '02101', city: 'Boston', state: 'Massachusetts', state_abbrev: 'MA', latitude: 42.3601, longitude: -71.0589 }
+      ];
 
-      console.log(`📊 Loading ${data.length} zipcode records into Azure SQL...`);
+      console.log(`📊 Loading ${sampleZipcodes.length} sample zipcode records into Azure SQL...`);
 
       let insertedCount = 0;
-      for (const row of data.slice(0, 5000)) { // Limit to first 5000 for performance
+      for (const record of sampleZipcodes) {
         try {
-          const postalCode = String(row['postal code'] || '').trim();
-          const city = String(row['City'] || '').trim();
-          const state = String(row['State'] || '').trim();
-          const stateAbbrev = String(row['State Abbrev'] || '').trim();
-          const latitude = parseFloat(row['latitude']) || null;
-          const longitude = parseFloat(row['longitude']) || null;
+          await pool.request()
+            .input('postal_code', record.postal_code)
+            .input('city', record.city)
+            .input('state', record.state)
+            .input('state_abbrev', record.state_abbrev)
+            .input('latitude', record.latitude)
+            .input('longitude', record.longitude)
+            .query(`
+              INSERT INTO us_zipcodes (postal_code, city, state, state_abbrev, latitude, longitude)
+              VALUES (@postal_code, @city, @state, @state_abbrev, @latitude, @longitude)
+            `);
 
-          if (postalCode && city && state && stateAbbrev) {
-            await pool.request()
-              .input('postal_code', postalCode)
-              .input('city', city)
-              .input('state', state)
-              .input('state_abbrev', stateAbbrev)
-              .input('latitude', latitude)
-              .input('longitude', longitude)
-              .query(`
-                INSERT INTO us_zipcodes (postal_code, city, state, state_abbrev, latitude, longitude)
-                VALUES (@postal_code, @city, @state, @state_abbrev, @latitude, @longitude)
-              `);
-
-            insertedCount++;
-          }
+          insertedCount++;
         } catch (error) {
           // Skip individual records that fail
           continue;
