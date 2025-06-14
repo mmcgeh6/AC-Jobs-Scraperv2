@@ -812,11 +812,8 @@ export default function ControlCenter() {
                                 </div>
                               </div>
                               <div className="text-right">
-                                <div className="text-xs text-gray-500">
-                                  {new Date(job.created_at).toLocaleDateString()}
-                                </div>
                                 {job.latitude && job.longitude && (
-                                  <Badge variant="outline" className="text-xs mt-1">
+                                  <Badge variant="outline" className="text-xs">
                                     <MapPin className="h-2 w-2 mr-1" />
                                     Geocoded
                                   </Badge>
@@ -841,6 +838,11 @@ export default function ControlCenter() {
                                 {job.latitude && job.longitude && (
                                   <span className="text-xs text-gray-500">
                                     📍 {parseFloat(job.latitude).toFixed(4)}, {parseFloat(job.longitude).toFixed(4)}
+                                  </span>
+                                )}
+                                {job.job_url && (
+                                  <span className="text-xs text-blue-600 truncate max-w-xs">
+                                    🔗 {job.job_url.replace('https://', '').substring(0, 40)}...
                                   </span>
                                 )}
                               </div>
