@@ -51,8 +51,8 @@ interface ActivityLog {
 
 interface JobPosting {
   id: number;
-  job_id: string;
-  job_url: string;
+  jobId: string;
+  jobUrl: string;
   title: string;
   city?: string;
   state?: string;
@@ -61,8 +61,8 @@ interface JobPosting {
   latitude?: string;
   longitude?: string;
   description?: string;
-  company_name?: string;
-  created_at: string;
+  companyName?: string;
+  createdAt: string;
 }
 
 interface SystemStatus {
@@ -781,7 +781,7 @@ export default function ControlCenter() {
                       </div>
                       <div className="bg-purple-50 p-4 rounded-lg">
                         <div className="text-2xl font-bold text-purple-600">
-                          {new Set(jobPostings.map(job => job.company_name).filter(Boolean)).size}
+                          {new Set(jobPostings.map(job => job.companyName).filter(Boolean)).size}
                         </div>
                         <div className="text-sm text-gray-600">Unique Companies</div>
                       </div>
@@ -795,8 +795,8 @@ export default function ControlCenter() {
                               <div className="flex-1">
                                 <h3 className="font-semibold text-gray-900 mb-1">{job.title}</h3>
                                 <div className="flex items-center space-x-4 text-sm text-gray-600">
-                                  {job.company_name && (
-                                    <span className="font-medium">{job.company_name}</span>
+                                  {job.companyName && (
+                                    <span className="font-medium">{job.companyName}</span>
                                   )}
                                   {job.city && job.state && (
                                     <div className="flex items-center space-x-1">
@@ -833,24 +833,24 @@ export default function ControlCenter() {
                             <div className="flex justify-between items-center mt-3">
                               <div className="flex items-center space-x-2">
                                 <Badge variant="outline" className="text-xs">
-                                  ID: {job.job_id}
+                                  ID: {job.jobId}
                                 </Badge>
                                 {job.latitude && job.longitude && (
                                   <span className="text-xs text-gray-500">
                                     📍 {parseFloat(job.latitude).toFixed(4)}, {parseFloat(job.longitude).toFixed(4)}
                                   </span>
                                 )}
-                                {job.job_url && (
+                                {job.jobUrl && (
                                   <span className="text-xs text-blue-600 truncate max-w-xs">
-                                    🔗 {job.job_url.replace('https://', '').substring(0, 40)}...
+                                    🔗 {job.jobUrl.replace('https://', '').substring(0, 40)}...
                                   </span>
                                 )}
                               </div>
-                              {job.job_url && (
+                              {job.jobUrl && (
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => window.open(job.job_url, '_blank')}
+                                  onClick={() => window.open(job.jobUrl, '_blank')}
                                   className="text-xs"
                                 >
                                   <Eye className="h-3 w-3 mr-1" />
