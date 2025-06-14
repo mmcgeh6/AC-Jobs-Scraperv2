@@ -92,6 +92,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/job-postings', async (req, res) => {
+    try {
+      const jobPostings = await storage.getAllJobPostings();
+      res.json(jobPostings);
+    } catch (error: any) {
+      console.error('Failed to get job postings:', error);
+      res.status(500).json({ message: 'Failed to get job postings', error: error.message });
+    }
+  });
+
   app.delete('/api/jobs/clear', async (req, res) => {
     try {
       console.log('🧹 Clearing all job postings...');

@@ -49,6 +49,22 @@ interface ActivityLog {
   timestamp: string;
 }
 
+interface JobPosting {
+  id: number;
+  job_id: string;
+  job_url: string;
+  title: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  zipcode?: string;
+  latitude?: string;
+  longitude?: string;
+  description?: string;
+  company_name?: string;
+  created_at: string;
+}
+
 interface SystemStatus {
   algoliaApi: boolean;
   azureOpenAI: boolean;
@@ -90,6 +106,11 @@ export default function ControlCenter() {
 
   const { data: systemStatus } = useQuery<SystemStatus>({
     queryKey: ['/api/system-status'],
+    refetchInterval: 30000,
+  });
+
+  const { data: jobPostings, isLoading: jobPostingsLoading } = useQuery<JobPosting[]>({
+    queryKey: ['/api/job-postings'],
     refetchInterval: 30000,
   });
 
@@ -251,6 +272,16 @@ export default function ControlCenter() {
                 }`}
               >
                 Processed Data ({processedJobs.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('jobs')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'jobs'
+                    ? 'border-azure-blue text-azure-blue'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Job Postings ({jobPostings?.length || 0})
               </button>
               <button
                 onClick={() => setActiveTab('system')}
@@ -713,6 +744,134 @@ export default function ControlCenter() {
                 </CardContent>
               </Card>
             </div>
+          </div>
+        )}
+
+        {/* Job Postings Tab */}
+        {activeTab === 'jobs' && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <FileText className="h-5 w-5" />
+                  <span>Job Postings Database</span>
+                  <Badge variant="outline" className="ml-2">
+                    {jobPostings?.length || 0} records
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {jobPostingsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin text-azure-blue" />
+                    <span className="ml-2 text-gray-600">Loading job postings...</span>
+                  </div>
+                ) : jobPostings && jobPostings.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <div className="text-2xl font-bold text-blue-600">{jobPostings.length}</div>
+                        <div className="text-sm text-gray-600">Total Job Postings</div>
+                      </div>
+                      <div className="bg-green-50 p-4 rounded-lg">
+                        <div className="text-2xl font-bold text-green-600">
+                          {jobPostings.filter(job => job.zipcode && job.zipcode !== 'none').length}
+                        </div>
+                        <div className="text-sm text-gray-600">With Zipcode Data</div>
+                      </div>
+                      <div className="bg-purple-50 p-4 rounded-lg">
+                        <div className="text-2xl font-bold text-purple-600">
+                          {new Set(jobPostings.map(job => job.company_name).filter(Boolean)).size}
+                        </div>
+                        <div className="text-sm text-gray-600">Unique Companies</div>
+                      </div>
+                    </div>
+                    
+                    <ScrollArea className="h-96 border rounded-lg">
+                      <div className="p-4 space-y-3">
+                        {jobPostings.map((job) => (
+                          <div key={job.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex-1">
+                                <h3 className="font-semibold text-gray-900 mb-1">{job.title}</h3>
+                                <div className="flex items-center space-x-4 text-sm text-gray-600">
+                                  {job.company_name && (
+                                    <span className="font-medium">{job.company_name}</span>
+                                  )}
+                                  {job.city && job.state && (
+                                    <div className="flex items-center space-x-1">
+                                      <MapPin className="h-3 w-3" />
+                                      <span>{job.city}, {job.state}</span>
+                                      {job.zipcode && job.zipcode !== 'none' && (
+                                        <Badge variant="secondary" className="text-xs">
+                                          {job.zipcode}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-xs text-gray-500">
+                                  {new Date(job.created_at).toLocaleDateString()}
+                                </div>
+                                {job.latitude && job.longitude && (
+                                  <Badge variant="outline" className="text-xs mt-1">
+                                    <MapPin className="h-2 w-2 mr-1" />
+                                    Geocoded
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {job.description && (
+                              <div className="text-sm text-gray-600 mt-2 line-clamp-2">
+                                {job.description.length > 150 
+                                  ? `${job.description.substring(0, 150)}...` 
+                                  : job.description
+                                }
+                              </div>
+                            )}
+                            
+                            <div className="flex justify-between items-center mt-3">
+                              <div className="flex items-center space-x-2">
+                                <Badge variant="outline" className="text-xs">
+                                  ID: {job.job_id}
+                                </Badge>
+                                {job.latitude && job.longitude && (
+                                  <span className="text-xs text-gray-500">
+                                    📍 {parseFloat(job.latitude).toFixed(4)}, {parseFloat(job.longitude).toFixed(4)}
+                                  </span>
+                                )}
+                              </div>
+                              {job.job_url && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => window.open(job.job_url, '_blank')}
+                                  className="text-xs"
+                                >
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  View Job
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600">No job postings found in the database</p>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Run the pipeline to fetch and process job data from Algolia
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
       </main>
