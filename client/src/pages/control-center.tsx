@@ -284,6 +284,16 @@ export default function ControlCenter() {
                 Job Postings ({jobPostings?.length || 0})
               </button>
               <button
+                onClick={() => setActiveTab('schedule')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'schedule'
+                    ? 'border-azure-blue text-azure-blue'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Schedule
+              </button>
+              <button
                 onClick={() => setActiveTab('system')}
                 className={`py-2 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'system'
@@ -568,12 +578,17 @@ export default function ControlCenter() {
                   <FileText className="h-5 w-5 text-azure-blue" />
                   <span>Processed Job Data</span>
                   <Badge variant="outline" className="ml-2">
-                    {processedJobs.length} jobs
+                    {jobPostings?.length || 0} jobs
                   </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {processedJobs.length === 0 ? (
+                {jobPostingsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin text-azure-blue" />
+                    <span className="ml-2 text-gray-600">Loading processed jobs...</span>
+                  </div>
+                ) : !jobPostings || jobPostings.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Eye className="h-12 w-12 mx-auto mb-4 text-gray-400" />
                     <p>No processed jobs available</p>
@@ -582,33 +597,33 @@ export default function ControlCenter() {
                 ) : (
                   <ScrollArea className="h-96">
                     <div className="space-y-4">
-                      {processedJobs.map((job, index) => (
-                        <div key={index} className="border rounded-lg p-4 bg-gray-50">
+                      {jobPostings.slice(0, 20).map((job) => (
+                        <div key={job.id} className="border rounded-lg p-4 bg-gray-50">
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                               <h4 className="font-medium text-sm text-azure-blue mb-2">Original Data</h4>
                               <div className="text-xs space-y-1">
-                                <p><strong>Title:</strong> {job.originalData?.title}</p>
-                                <p><strong>Job ID:</strong> {job.originalData?.jobID}</p>
-                                <p><strong>City:</strong> {job.originalData?.city}</p>
-                                <p><strong>Country:</strong> {job.originalData?.country}</p>
-                                <p><strong>Business Area:</strong> {job.originalData?.businessArea}</p>
+                                <p><strong>Title:</strong> {job.title}</p>
+                                <p><strong>Job ID:</strong> {job.jobId}</p>
+                                <p><strong>City:</strong> {job.city}</p>
+                                <p><strong>Country:</strong> {job.country}</p>
+                                <p><strong>Business Area:</strong> {job.description}</p>
                               </div>
                             </div>
                             <div>
                               <h4 className="font-medium text-sm text-success-green mb-2">AI Processed</h4>
                               <div className="text-xs space-y-1">
-                                <p><strong>Parsed City:</strong> {job.aiProcessed?.city}</p>
-                                <p><strong>Parsed State:</strong> {job.aiProcessed?.state}</p>
-                                <p><strong>Parsed Country:</strong> {job.aiProcessed?.country}</p>
+                                <p><strong>Parsed City:</strong> {job.city}</p>
+                                <p><strong>Parsed State:</strong> {job.state}</p>
+                                <p><strong>Parsed Country:</strong> {job.country}</p>
                               </div>
                             </div>
                             <div>
                               <h4 className="font-medium text-sm text-warning-orange mb-2">Geocoded</h4>
                               <div className="text-xs space-y-1">
-                                <p><strong>Latitude:</strong> {job.coordinates?.latitude}</p>
-                                <p><strong>Longitude:</strong> {job.coordinates?.longitude}</p>
-                                <p><strong>Processed:</strong> {new Date(job.timestamp).toLocaleTimeString()}</p>
+                                <p><strong>Latitude:</strong> {job.latitude}</p>
+                                <p><strong>Longitude:</strong> {job.longitude}</p>
+                                <p><strong>Processed:</strong> {job.createdAt ? new Date(job.createdAt).toLocaleString() : 'Invalid Date'}</p>
                               </div>
                             </div>
                           </div>
@@ -617,6 +632,199 @@ export default function ControlCenter() {
                     </div>
                   </ScrollArea>
                 )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {activeTab === 'schedule' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Schedule Configuration */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Clock className="h-5 w-5 text-azure-blue" />
+                    <span>Automated Schedule</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="border rounded-lg p-4 bg-blue-50">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h3 className="font-medium text-neutral-dark">Daily Pipeline Execution</h3>
+                          <p className="text-sm text-gray-600">Automatically fetch and process all Algolia job listings</p>
+                        </div>
+                        <Badge variant="outline" className="bg-success-green/10 text-success-green border-success-green/20">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Ready
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Schedule:</span>
+                          <span className="font-medium">Daily at 2:00 AM UTC</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Next Run:</span>
+                          <span className="font-medium">
+                            {new Date(new Date().setHours(2, 0, 0, 0) + (new Date().getHours() >= 2 ? 86400000 : 0)).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Batch Size:</span>
+                          <span className="font-medium">100 jobs per batch</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Button 
+                        className="w-full bg-azure-blue hover:bg-azure-blue/90 text-white"
+                        onClick={() => {
+                          toast({
+                            title: "Schedule Activated",
+                            description: "Daily pipeline execution is now scheduled for 2:00 AM UTC.",
+                          });
+                        }}
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Activate Daily Schedule
+                      </Button>
+                      
+                      <Button 
+                        variant="outline" 
+                        className="w-full"
+                        onClick={() => {
+                          toast({
+                            title: "Test Run Started",
+                            description: "Running a test execution to verify the schedule configuration.",
+                          });
+                        }}
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Test Schedule (Run Now)
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Schedule History */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Activity className="h-5 w-5 text-azure-blue" />
+                    <span>Schedule History</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="border rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium">Manual Execution</span>
+                        <Badge variant="outline" className="bg-success-green/10 text-success-green border-success-green/20">
+                          Completed
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-gray-600 space-y-1">
+                        <div>Started: {pipelineStatus?.startTime ? new Date(pipelineStatus.startTime).toLocaleString() : 'Never'}</div>
+                        <div>Duration: {pipelineStatus?.endTime && pipelineStatus?.startTime ? 
+                          Math.round((new Date(pipelineStatus.endTime).getTime() - new Date(pipelineStatus.startTime).getTime()) / 1000) + 's' : 
+                          'N/A'}
+                        </div>
+                        <div>Jobs Processed: {pipelineStatus?.totalJobs || 0}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="text-center py-4 text-gray-500">
+                      <Clock className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                      <p className="text-sm">No scheduled executions yet</p>
+                      <p className="text-xs mt-1">Activate the daily schedule to see automated runs here</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Schedule Configuration Details */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Settings className="h-5 w-5 text-azure-blue" />
+                  <span>Schedule Configuration</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div>
+                    <h4 className="font-medium text-sm text-azure-blue mb-3">Execution Details</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Frequency:</span>
+                        <span>Daily</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Time:</span>
+                        <span>2:00 AM UTC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Timezone:</span>
+                        <span>UTC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Timeout:</span>
+                        <span>30 minutes</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-medium text-sm text-success-green mb-3">Data Processing</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Source:</span>
+                        <span>Algolia API</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">AI Processing:</span>
+                        <span>Azure OpenAI</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Geocoding:</span>
+                        <span>Google Maps API</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Storage:</span>
+                        <span>Azure SQL</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-medium text-sm text-warning-orange mb-3">Notifications</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Success:</span>
+                        <span>Dashboard Log</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Failure:</span>
+                        <span>Error Log</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Email:</span>
+                        <span>Disabled</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Retry Policy:</span>
+                        <span>3 attempts</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>

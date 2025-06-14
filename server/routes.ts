@@ -122,7 +122,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Creating database tables...');
       
       // Get database connection
-      const { SQLStorage } = await import('./sql-storage');
+      const { AzureSQLStorage } = await import('./azure-sql-storage');
       const sqlStorage = new SQLStorage();
       const pool = await (sqlStorage as any).getPool();
       
