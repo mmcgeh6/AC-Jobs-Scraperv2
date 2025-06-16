@@ -858,7 +858,7 @@ export default function ControlCenter() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Geocoding:</span>
-                        <span>Google Maps API</span>
+                        <span>Azure SQL Zipcode Table</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Storage:</span>
