@@ -253,8 +253,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         level: 'info'
       });
 
-      // Start the pipeline in the background
-      azurePipelineService.executePipeline(100).catch(error => {
+      // Start the pipeline in the background with 1000 batch size
+      azurePipelineService.executePipeline(1000).catch(error => {
         console.error('Test execution error:', error);
       });
 

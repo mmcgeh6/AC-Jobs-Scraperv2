@@ -92,6 +92,8 @@ export default function ControlCenter() {
   const [batchSize, setBatchSize] = useState(50);
   const [activeTab, setActiveTab] = useState('control');
   const [processedJobs, setProcessedJobs] = useState<any[]>([]);
+  const [scheduleTime, setScheduleTime] = useState('02:00');
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
 
   // Queries
   const { data: pipelineStatus, refetch: refetchStatus } = useQuery<PipelineStatus>({
@@ -663,19 +665,44 @@ export default function ControlCenter() {
                       </div>
                       
                       <div className="space-y-3">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Schedule:</span>
-                          <span className="font-medium">Daily at 2:00 AM UTC</span>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="schedule-time" className="text-xs text-gray-600">Execution Time (UTC)</Label>
+                            <Input
+                              id="schedule-time"
+                              type="time"
+                              value={scheduleTime}
+                              onChange={(e) => setScheduleTime(e.target.value)}
+                              className="mt-1"
+                            />
+                          </div>
+                          <div className="flex items-end">
+                            <div className="text-sm">
+                              <div className="text-gray-600">Status:</div>
+                              <div className="font-medium text-success-green">
+                                {scheduleEnabled ? 'Active' : 'Ready'}
+                              </div>
+                            </div>
+                          </div>
                         </div>
+                        
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Next Run:</span>
                           <span className="font-medium">
-                            {new Date(new Date().setHours(2, 0, 0, 0) + (new Date().getHours() >= 2 ? 86400000 : 0)).toLocaleString()}
+                            {(() => {
+                              const [hours, minutes] = scheduleTime.split(':').map(Number);
+                              const nextRun = new Date();
+                              nextRun.setHours(hours, minutes, 0, 0);
+                              if (nextRun <= new Date()) {
+                                nextRun.setDate(nextRun.getDate() + 1);
+                              }
+                              return nextRun.toLocaleString();
+                            })()}
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Batch Size:</span>
-                          <span className="font-medium">100 jobs per batch</span>
+                          <span className="font-medium">1000 jobs per batch</span>
                         </div>
                       </div>
                     </div>
@@ -685,14 +712,18 @@ export default function ControlCenter() {
                         className="w-full bg-azure-blue hover:bg-azure-blue/90 text-white"
                         onClick={async () => {
                           try {
-                            await apiRequest('/api/schedule/activate', {
+                            const response = await fetch('/api/schedule/activate', {
                               method: 'POST',
-                              body: JSON.stringify({ enabled: true, time: "02:00", timezone: "UTC" }),
+                              body: JSON.stringify({ enabled: true, time: scheduleTime, timezone: "UTC" }),
                               headers: { 'Content-Type': 'application/json' }
                             });
+                            
+                            if (!response.ok) throw new Error('Failed to activate schedule');
+                            
+                            setScheduleEnabled(true);
                             toast({
                               title: "Schedule Activated",
-                              description: "Daily pipeline execution is now scheduled for 2:00 AM UTC.",
+                              description: `Daily pipeline execution scheduled for ${scheduleTime} UTC with 1000 job batches.`,
                             });
                           } catch (error) {
                             toast({
@@ -704,7 +735,7 @@ export default function ControlCenter() {
                         }}
                       >
                         <Play className="w-4 h-4 mr-2" />
-                        Activate Daily Schedule
+                        {scheduleEnabled ? 'Update Schedule' : 'Activate Daily Schedule'}
                       </Button>
                       
                       <Button 
@@ -712,13 +743,16 @@ export default function ControlCenter() {
                         className="w-full"
                         onClick={async () => {
                           try {
-                            await apiRequest('/api/schedule/test', {
+                            const response = await fetch('/api/schedule/test', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' }
                             });
+                            
+                            if (!response.ok) throw new Error('Failed to start test execution');
+                            
                             toast({
                               title: "Test Run Started",
-                              description: "Running a test execution to verify the schedule configuration.",
+                              description: "Running pipeline with 1000 job batches to verify schedule configuration.",
                             });
                             setActiveTab('control');
                           } catch (error) {
@@ -794,7 +828,11 @@ export default function ControlCenter() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Time:</span>
-                        <span>2:00 AM UTC</span>
+                        <span>{scheduleTime} UTC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Batch Size:</span>
+                        <span>1000 jobs</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Timezone:</span>
