@@ -114,17 +114,24 @@ class Scheduler {
 
   private calculateNextRun(time: string, timezone: string): string {
     const [hours, minutes] = time.split(':').map(Number);
+    
+    // Get current time in Eastern timezone
     const now = new Date();
-    const nextRun = new Date();
+    const easternNow = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
     
-    nextRun.setHours(hours, minutes, 0, 0);
+    // Create next run time in Eastern timezone
+    const easternNext = new Date(easternNow);
+    easternNext.setHours(hours, minutes, 0, 0);
     
-    // If the time has already passed today, schedule for tomorrow
-    if (nextRun <= now) {
-      nextRun.setDate(nextRun.getDate() + 1);
+    // If the time has already passed today in Eastern time, schedule for tomorrow
+    if (easternNext <= easternNow) {
+      easternNext.setDate(easternNext.getDate() + 1);
     }
     
-    return nextRun.toISOString();
+    // Convert Eastern time back to UTC for storage
+    const utcNext = new Date(easternNext.toLocaleString("en-US", {timeZone: "UTC"}));
+    
+    return utcNext.toISOString();
   }
 }
 

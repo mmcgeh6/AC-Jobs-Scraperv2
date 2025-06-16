@@ -680,7 +680,7 @@ export default function ControlCenter() {
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <Label htmlFor="schedule-time" className="text-xs text-gray-600">Execution Time (UTC)</Label>
+                            <Label htmlFor="schedule-time" className="text-xs text-gray-600">Execution Time (Eastern)</Label>
                             <Input
                               id="schedule-time"
                               type="time"
@@ -727,7 +727,7 @@ export default function ControlCenter() {
                           try {
                             const response = await fetch('/api/schedule/activate', {
                               method: 'POST',
-                              body: JSON.stringify({ enabled: true, time: scheduleTime, timezone: "UTC" }),
+                              body: JSON.stringify({ enabled: true, time: scheduleTime, timezone: "America/New_York" }),
                               headers: { 'Content-Type': 'application/json' }
                             });
                             
@@ -740,7 +740,7 @@ export default function ControlCenter() {
                             
                             toast({
                               title: "Schedule Activated",
-                              description: `Daily pipeline execution scheduled for ${scheduleTime} UTC with 1000 job batches.`,
+                              description: `Daily pipeline execution scheduled for ${scheduleTime} Eastern time with 1000 job batches.`,
                             });
                           } catch (error) {
                             toast({
