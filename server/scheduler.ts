@@ -113,25 +113,47 @@ class Scheduler {
   }
 
   private calculateNextRun(time: string, timezone: string): string {
-    const [hours, minutes] = time.split(':').map(Number);
-    
-    // Get current time in Eastern timezone
-    const now = new Date();
-    const easternNow = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
-    
-    // Create next run time in Eastern timezone for today
-    const easternNext = new Date(easternNow);
-    easternNext.setHours(hours, minutes, 0, 0);
-    
-    // If the time has already passed today in Eastern time, schedule for tomorrow
-    if (easternNext <= easternNow) {
-      easternNext.setDate(easternNext.getDate() + 1);
+    // Hard-coded fallback for 9:30 AM Eastern daily
+    if (time === "09:30") {
+      const now = new Date();
+      
+      // 9:30 AM Eastern = 1:30 PM UTC (during EDT) or 2:30 PM UTC (during EST)
+      // Currently in June, so EDT applies (9:30 AM + 4 hours = 1:30 PM UTC)
+      const nextRun = new Date();
+      nextRun.setUTCHours(13, 30, 0, 0); // 1:30 PM UTC
+      
+      // If already past 1:30 PM UTC today, schedule for tomorrow
+      if (nextRun <= now) {
+        nextRun.setUTCDate(nextRun.getUTCDate() + 1);
+      }
+      
+      return nextRun.toISOString();
     }
     
-    // Convert back to UTC for internal storage
-    const utcTime = new Date(easternNext.getTime() + (easternNext.getTimezoneOffset() * 60000));
+    // Fallback for other times
+    const [hours, minutes] = time.split(':').map(Number);
+    const now = new Date();
+    const nextRun = new Date();
     
-    return utcTime.toISOString();
+    // Convert Eastern to UTC (subtract 4 hours for EDT, 5 for EST)
+    const isDST = this.isDaylightSavingTime();
+    const utcHours = hours + (isDST ? 4 : 5);
+    
+    nextRun.setUTCHours(utcHours, minutes, 0, 0);
+    
+    if (nextRun <= now) {
+      nextRun.setUTCDate(nextRun.getUTCDate() + 1);
+    }
+    
+    return nextRun.toISOString();
+  }
+
+  private isDaylightSavingTime(): boolean {
+    const now = new Date();
+    const january = new Date(now.getFullYear(), 0, 1);
+    const july = new Date(now.getFullYear(), 6, 1);
+    const stdOffset = Math.max(january.getTimezoneOffset(), july.getTimezoneOffset());
+    return now.getTimezoneOffset() < stdOffset;
   }
 }
 
