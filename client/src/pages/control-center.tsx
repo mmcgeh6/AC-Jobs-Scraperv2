@@ -121,6 +121,14 @@ export default function ControlCenter() {
     refetchInterval: 30000,
   });
 
+  // Update local state when schedule status loads
+  useEffect(() => {
+    if (scheduleStatus) {
+      setScheduleTime(scheduleStatus.time || '02:00');
+      setScheduleEnabled(scheduleStatus.enabled || false);
+    }
+  }, [scheduleStatus]);
+
   // Mutations
   const startPipelineMutation = useMutation({
     mutationFn: async () => {
@@ -726,6 +734,10 @@ export default function ControlCenter() {
                             if (!response.ok) throw new Error('Failed to activate schedule');
                             
                             setScheduleEnabled(true);
+                            
+                            // Refresh schedule status
+                            queryClient.invalidateQueries({ queryKey: ['/api/schedule/status'] });
+                            
                             toast({
                               title: "Schedule Activated",
                               description: `Daily pipeline execution scheduled for ${scheduleTime} UTC with 1000 job batches.`,
