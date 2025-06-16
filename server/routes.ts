@@ -7,17 +7,24 @@ import { scheduler } from "./scheduler";
 
 function calculateNextRun(time: string, timezone: string): string {
   const [hours, minutes] = time.split(':').map(Number);
+  
+  // Get current time in Eastern timezone
   const now = new Date();
-  const nextRun = new Date();
+  const easternNow = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
   
-  nextRun.setHours(hours, minutes, 0, 0);
+  // Create next run time in Eastern timezone for today
+  const easternNext = new Date(easternNow);
+  easternNext.setHours(hours, minutes, 0, 0);
   
-  // If the time has already passed today, schedule for tomorrow
-  if (nextRun <= now) {
-    nextRun.setDate(nextRun.getDate() + 1);
+  // If the time has already passed today in Eastern time, schedule for tomorrow
+  if (easternNext <= easternNow) {
+    easternNext.setDate(easternNext.getDate() + 1);
   }
   
-  return nextRun.toISOString();
+  // Convert back to UTC for internal storage
+  const utcTime = new Date(easternNext.getTime() + (easternNext.getTimezoneOffset() * 60000));
+  
+  return utcTime.toISOString();
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -221,7 +228,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Scheduling endpoints
   app.post('/api/schedule/activate', async (req, res) => {
     try {
-      const { enabled = true, time = "02:00", timezone = "UTC" } = req.body;
+      const { enabled = true, time = "02:00", timezone = "America/New_York" } = req.body;
       
       const scheduleConfig = {
         enabled,
@@ -258,8 +265,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({
           enabled: false,
           time: "02:00",
-          timezone: "UTC",
-          nextRun: calculateNextRun("02:00", "UTC"),
+          timezone: "America/New_York",
+          nextRun: calculateNextRun("02:00", "America/New_York"),
           status: "inactive"
         });
       } else {

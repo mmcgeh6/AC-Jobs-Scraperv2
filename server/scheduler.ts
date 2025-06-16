@@ -119,7 +119,7 @@ class Scheduler {
     const now = new Date();
     const easternNow = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
     
-    // Create next run time in Eastern timezone
+    // Create next run time in Eastern timezone for today
     const easternNext = new Date(easternNow);
     easternNext.setHours(hours, minutes, 0, 0);
     
@@ -128,10 +128,10 @@ class Scheduler {
       easternNext.setDate(easternNext.getDate() + 1);
     }
     
-    // Convert Eastern time back to UTC for storage
-    const utcNext = new Date(easternNext.toLocaleString("en-US", {timeZone: "UTC"}));
+    // Convert back to UTC for internal storage
+    const utcTime = new Date(easternNext.getTime() + (easternNext.getTimezoneOffset() * 60000));
     
-    return utcNext.toISOString();
+    return utcTime.toISOString();
   }
 }
 
