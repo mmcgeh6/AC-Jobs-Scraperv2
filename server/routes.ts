@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer } from "ws";
 import { storage } from "./storage";
 import { azurePipelineService } from "./azure-pipeline";
+import { scheduler } from "./scheduler";
 
 function calculateNextRun(time: string, timezone: string): string {
   const [hours, minutes] = time.split(':').map(Number);
@@ -230,6 +231,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         activated: new Date().toISOString()
       };
       
+      // Save configuration through scheduler service
+      await scheduler.saveScheduleConfig(scheduleConfig);
+      
       await storage.createActivityLog({
         message: `Daily schedule ${enabled ? 'activated' : 'deactivated'} for ${time} ${timezone}`,
         level: 'success'
@@ -243,6 +247,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Schedule activation error:', error);
       res.status(500).json({ error: 'Failed to update schedule configuration' });
+    }
+  });
+
+  app.get('/api/schedule/status', async (req, res) => {
+    try {
+      const config = scheduler.getScheduleConfig();
+      
+      if (!config) {
+        res.json({
+          enabled: false,
+          time: "02:00",
+          timezone: "UTC",
+          nextRun: calculateNextRun("02:00", "UTC"),
+          status: "inactive"
+        });
+      } else {
+        res.json({
+          ...config,
+          status: config.enabled ? "active" : "inactive"
+        });
+      }
+    } catch (error) {
+      console.error('Schedule status error:', error);
+      res.status(500).json({ error: 'Failed to get schedule status' });
     }
   });
 

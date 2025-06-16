@@ -116,6 +116,11 @@ export default function ControlCenter() {
     refetchInterval: 30000,
   });
 
+  const { data: scheduleStatus } = useQuery<any>({
+    queryKey: ['/api/schedule/status'],
+    refetchInterval: 30000,
+  });
+
   // Mutations
   const startPipelineMutation = useMutation({
     mutationFn: async () => {
