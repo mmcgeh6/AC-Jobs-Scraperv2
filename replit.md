@@ -89,7 +89,8 @@ The application is designed with flexibility in mind regarding database selectio
 - **Error Recovery**: Automatic retry mechanisms for transient failures
 
 ## Recent Changes
-- **June 15, 2025 - Scheduling Enhancements**: Added customizable time picker for daily automated execution and increased batch size to 1000 jobs per batch for more efficient processing. Users can now set any execution time in UTC timezone with real-time next run calculation.
+- **June 16, 2025 - Reliable Eastern Time Scheduling**: Implemented fallback scheduling system with hard-coded timezone conversion for 9:30 AM Eastern daily execution. Fixed timezone calculation issues and established reliable automated pipeline execution with 1000-job batches.
+- **June 15, 2025 - Scheduling Enhancements**: Added customizable time picker for daily automated execution and increased batch size to 1000 jobs per batch for more efficient processing. Users can now set any execution time in Eastern timezone with real-time next run calculation.
 - **June 14, 2025 - Production Ready**: Removed all development zipcode loading code, cleaned up CSV/Excel processing files. System now uses manually populated us_zipcodes table with 40,972 records for optimal zipcode extraction performance.
 - **June 14, 2025**: Fixed array slicing limitations that prevented full zipcode dataset insertion
 - **June 14, 2025**: Initial setup with Azure SQL integration and comprehensive zipcode lookup system
