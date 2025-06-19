@@ -9,6 +9,8 @@ interface ScheduleConfig {
   lastRun?: string;
   nextRun: string;
   activated: string;
+  oneTime?: boolean;
+  date?: string;
 }
 
 class Scheduler {
@@ -99,9 +101,21 @@ class Scheduler {
         level: 'info'
       });
 
-      // Update last run and calculate next run
+      // Update last run
       this.scheduleConfig.lastRun = now.toISOString();
-      this.scheduleConfig.nextRun = this.calculateNextRun(this.scheduleConfig.time, this.scheduleConfig.timezone);
+      
+      // Handle one-time vs recurring schedules
+      if (this.scheduleConfig.oneTime) {
+        // For one-time schedules, disable after execution
+        this.scheduleConfig.enabled = false;
+        await storage.createActivityLog({
+          message: `One-time schedule completed and disabled`,
+          level: 'info'
+        });
+      } else {
+        // For recurring schedules, calculate next daily run
+        this.scheduleConfig.nextRun = this.calculateNextRun(this.scheduleConfig.time, this.scheduleConfig.timezone);
+      }
       
       // Save updated config
       await this.saveScheduleConfig(this.scheduleConfig);

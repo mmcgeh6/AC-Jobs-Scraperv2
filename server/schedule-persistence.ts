@@ -9,6 +9,8 @@ export interface ScheduleConfig {
   timezone: string;
   nextRun: string;
   activated: string;
+  oneTime?: boolean;
+  date?: string;
 }
 
 export async function saveScheduleConfig(config: ScheduleConfig): Promise<void> {
