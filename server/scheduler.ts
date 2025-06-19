@@ -140,34 +140,17 @@ class Scheduler {
   }
 
   private calculateNextRun(time: string, timezone: string): string {
-    // Hard-coded fallback for 9:30 AM Eastern daily
-    if (time === "09:30") {
-      const now = new Date();
-      
-      // 9:30 AM Eastern = 1:30 PM UTC (during EDT) or 2:30 PM UTC (during EST)
-      // Currently in June, so EDT applies (9:30 AM + 4 hours = 1:30 PM UTC)
-      const nextRun = new Date();
-      nextRun.setUTCHours(13, 30, 0, 0); // 1:30 PM UTC
-      
-      // If already past 1:30 PM UTC today, schedule for tomorrow
-      if (nextRun <= now) {
-        nextRun.setUTCDate(nextRun.getUTCDate() + 1);
-      }
-      
-      return nextRun.toISOString();
-    }
-    
-    // Fallback for other times
     const [hours, minutes] = time.split(':').map(Number);
     const now = new Date();
     const nextRun = new Date();
     
-    // Convert Eastern to UTC (subtract 4 hours for EDT, 5 for EST)
+    // Convert Eastern to UTC (add 4 hours for EDT, 5 for EST)
     const isDST = this.isDaylightSavingTime();
     const utcHours = hours + (isDST ? 4 : 5);
     
     nextRun.setUTCHours(utcHours, minutes, 0, 0);
     
+    // If already past the scheduled time today, schedule for tomorrow
     if (nextRun <= now) {
       nextRun.setUTCDate(nextRun.getUTCDate() + 1);
     }

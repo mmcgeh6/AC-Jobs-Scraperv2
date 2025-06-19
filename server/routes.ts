@@ -5,25 +5,15 @@ import { storage } from "./storage";
 import { azurePipelineService } from "./azure-pipeline";
 import { scheduler } from "./scheduler";
 
+function isDaylightSavingTime(): boolean {
+  const now = new Date();
+  const january = new Date(now.getFullYear(), 0, 1);
+  const july = new Date(now.getFullYear(), 6, 1);
+  const stdOffset = Math.max(january.getTimezoneOffset(), july.getTimezoneOffset());
+  return now.getTimezoneOffset() < stdOffset;
+}
+
 function calculateNextRun(time: string, timezone: string): string {
-  // Hard-coded fallback for 9:30 AM Eastern daily
-  if (time === "09:30") {
-    const now = new Date();
-    
-    // 9:30 AM Eastern = 1:30 PM UTC (during EDT) or 2:30 PM UTC (during EST)
-    // Currently in June, so EDT applies (9:30 AM + 4 hours = 1:30 PM UTC)
-    const nextRun = new Date();
-    nextRun.setUTCHours(13, 30, 0, 0); // 1:30 PM UTC
-    
-    // If already past 1:30 PM UTC today, schedule for tomorrow
-    if (nextRun <= now) {
-      nextRun.setUTCDate(nextRun.getUTCDate() + 1);
-    }
-    
-    return nextRun.toISOString();
-  }
-  
-  // Fallback for other times
   const [hours, minutes] = time.split(':').map(Number);
   const now = new Date();
   const nextRun = new Date();
@@ -34,6 +24,7 @@ function calculateNextRun(time: string, timezone: string): string {
   
   nextRun.setUTCHours(utcHours, minutes, 0, 0);
   
+  // If already past the scheduled time today, schedule for tomorrow
   if (nextRun <= now) {
     nextRun.setUTCDate(nextRun.getUTCDate() + 1);
   }
