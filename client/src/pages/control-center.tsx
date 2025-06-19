@@ -93,6 +93,7 @@ export default function ControlCenter() {
   const [activeTab, setActiveTab] = useState('control');
   const [processedJobs, setProcessedJobs] = useState<any[]>([]);
   const [scheduleTime, setScheduleTime] = useState('02:00');
+  const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split('T')[0]);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
 
   // Queries
@@ -678,7 +679,17 @@ export default function ControlCenter() {
                       </div>
                       
                       <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <Label htmlFor="schedule-date" className="text-xs text-gray-600">Execution Date</Label>
+                            <Input
+                              id="schedule-date"
+                              type="date"
+                              value={scheduleDate}
+                              onChange={(e) => setScheduleDate(e.target.value)}
+                              className="mt-1"
+                            />
+                          </div>
                           <div>
                             <Label htmlFor="schedule-time" className="text-xs text-gray-600">Execution Time (Eastern)</Label>
                             <Input
@@ -704,12 +715,24 @@ export default function ControlCenter() {
                           <span className="font-medium">
                             {(() => {
                               const [hours, minutes] = scheduleTime.split(':').map(Number);
-                              const nextRun = new Date();
+                              const nextRun = new Date(scheduleDate);
                               nextRun.setHours(hours, minutes, 0, 0);
-                              if (nextRun <= new Date()) {
-                                nextRun.setDate(nextRun.getDate() + 1);
-                              }
-                              return nextRun.toLocaleString();
+                              
+                              // If the selected date/time is in the past, show it in red
+                              const isPast = nextRun <= new Date();
+                              return (
+                                <span className={isPast ? 'text-red-500' : ''}>
+                                  {nextRun.toLocaleString('en-US', {
+                                    weekday: 'short',
+                                    month: 'short', 
+                                    day: 'numeric',
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                    timeZoneName: 'short'
+                                  })}
+                                  {isPast && ' (Past)'}
+                                </span>
+                              );
                             })()}
                           </span>
                         </div>
@@ -725,9 +748,22 @@ export default function ControlCenter() {
                         className="w-full bg-azure-blue hover:bg-azure-blue/90 text-white"
                         onClick={async () => {
                           try {
+                            const [hours, minutes] = scheduleTime.split(':').map(Number);
+                            const selectedDateTime = new Date(scheduleDate);
+                            selectedDateTime.setHours(hours, minutes, 0, 0);
+                            
+                            // Determine if this is a one-time or recurring schedule
+                            const isOneTime = selectedDateTime.toDateString() !== new Date().toDateString();
+                            
                             const response = await fetch('/api/schedule/activate', {
                               method: 'POST',
-                              body: JSON.stringify({ enabled: true, time: scheduleTime, timezone: "America/New_York" }),
+                              body: JSON.stringify({ 
+                                enabled: true, 
+                                time: scheduleTime, 
+                                date: scheduleDate,
+                                timezone: "America/New_York",
+                                oneTime: isOneTime
+                              }),
                               headers: { 'Content-Type': 'application/json' }
                             });
                             
@@ -740,7 +776,9 @@ export default function ControlCenter() {
                             
                             toast({
                               title: "Schedule Activated",
-                              description: `Daily pipeline execution scheduled for ${scheduleTime} Eastern time with 1000 job batches.`,
+                              description: isOneTime 
+                                ? `One-time pipeline execution scheduled for ${selectedDateTime.toLocaleString()} with 1000 job batches.`
+                                : `Daily pipeline execution scheduled for ${scheduleTime} Eastern time with 1000 job batches.`,
                             });
                           } catch (error) {
                             toast({
@@ -752,7 +790,20 @@ export default function ControlCenter() {
                         }}
                       >
                         <Play className="w-4 h-4 mr-2" />
-                        {scheduleEnabled ? 'Update Schedule' : 'Activate Daily Schedule'}
+                        {(() => {
+                          const [hours, minutes] = scheduleTime.split(':').map(Number);
+                          const selectedDateTime = new Date(scheduleDate);
+                          selectedDateTime.setHours(hours, minutes, 0, 0);
+                          const isOneTime = selectedDateTime.toDateString() !== new Date().toDateString();
+                          
+                          if (scheduleEnabled) {
+                            return 'Update Schedule';
+                          } else if (isOneTime) {
+                            return 'Schedule One-Time Run';
+                          } else {
+                            return 'Activate Daily Schedule';
+                          }
+                        })()}
                       </Button>
                       
                       <Button 

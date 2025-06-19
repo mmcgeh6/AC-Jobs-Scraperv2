@@ -250,27 +250,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Scheduling endpoints
   app.post('/api/schedule/activate', async (req, res) => {
     try {
-      const { enabled = true, time = "02:00", timezone = "America/New_York" } = req.body;
+      const { enabled = true, time = "02:00", date, timezone = "America/New_York", oneTime = false } = req.body;
+      
+      let nextRun;
+      if (oneTime && date) {
+        // For one-time execution, use the specific date and time
+        const [hours, minutes] = time.split(':').map(Number);
+        const scheduledDate = new Date(date);
+        scheduledDate.setHours(hours, minutes, 0, 0);
+        nextRun = scheduledDate.toISOString();
+      } else {
+        // For recurring execution, calculate next daily run
+        nextRun = calculateNextRun(time, timezone);
+      }
       
       const scheduleConfig = {
         enabled,
         time,
         timezone,
-        nextRun: calculateNextRun(time, timezone),
-        activated: new Date().toISOString()
+        nextRun,
+        activated: new Date().toISOString(),
+        oneTime: oneTime || false,
+        date: date || null
       };
       
       // Save configuration through scheduler service
       await scheduler.saveScheduleConfig(scheduleConfig);
       
       await storage.createActivityLog({
-        message: `Daily schedule ${enabled ? 'activated' : 'deactivated'} for ${time} ${timezone}`,
+        message: oneTime 
+          ? `One-time schedule activated for ${new Date(nextRun).toLocaleString()}`
+          : `Daily schedule ${enabled ? 'activated' : 'deactivated'} for ${time} ${timezone}`,
         level: 'success'
       });
       
       res.json({ 
         success: true, 
-        message: `Schedule ${enabled ? 'activated' : 'deactivated'} successfully`,
+        message: oneTime ? 'One-time schedule activated successfully' : `Schedule ${enabled ? 'activated' : 'deactivated'} successfully`,
         config: scheduleConfig
       });
     } catch (error) {
