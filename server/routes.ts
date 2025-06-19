@@ -32,14 +32,6 @@ function calculateNextRun(time: string, timezone: string): string {
   return nextRun.toISOString();
 }
 
-function isDaylightSavingTime(): boolean {
-  const now = new Date();
-  const january = new Date(now.getFullYear(), 0, 1);
-  const july = new Date(now.getFullYear(), 6, 1);
-  const stdOffset = Math.max(january.getTimezoneOffset(), july.getTimezoneOffset());
-  return now.getTimezoneOffset() < stdOffset;
-}
-
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
