@@ -1,7 +1,9 @@
 {
   "enabled": true,
-  "time": "09:30",
+  "time": "14:45",
   "timezone": "America/New_York",
-  "nextRun": "2025-06-20T13:30:00.000Z",
-  "activated": "2025-06-19T13:32:39.282Z"
+  "nextRun": "2025-06-19T14:45:00.000Z",
+  "activated": "2025-06-19T13:43:20.486Z",
+  "oneTime": true,
+  "date": "2025-06-19"
 }
