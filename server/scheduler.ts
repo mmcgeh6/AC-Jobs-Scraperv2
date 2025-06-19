@@ -1,5 +1,6 @@
 import { azurePipelineService } from './azure-pipeline';
 import { storage } from './storage';
+import { saveScheduleConfig as saveToFile, loadScheduleConfig as loadFromFile } from './schedule-persistence';
 
 interface ScheduleConfig {
   enabled: boolean;
@@ -7,6 +8,7 @@ interface ScheduleConfig {
   timezone: string;
   lastRun?: string;
   nextRun: string;
+  activated: string;
 }
 
 class Scheduler {
@@ -38,31 +40,26 @@ class Scheduler {
   async saveScheduleConfig(config: ScheduleConfig) {
     this.scheduleConfig = config;
     
-    // Use the database storage method
+    // Use reliable file-based storage
+    await saveToFile(config);
+    
+    // Also save to activity logs as backup
     try {
-      if ('saveScheduleConfig' in storage) {
-        await (storage as any).saveScheduleConfig(config);
-      } else {
-        // Fallback to activity log storage
-        await storage.createActivityLog({
-          message: `SCHEDULE_CONFIG:${JSON.stringify(config)}`,
-          level: 'info'
-        });
-        console.log('💾 Schedule configuration saved to activity logs:', config);
-      }
+      await storage.createActivityLog({
+        message: `SCHEDULE_CONFIG:${JSON.stringify(config)}`,
+        level: 'info'
+      });
     } catch (error) {
-      console.error('Failed to save schedule config:', error);
+      console.error('Failed to save to activity logs:', error);
     }
   }
 
   async loadScheduleConfig() {
     try {
-      // Try the database loading method first
-      if ('loadScheduleConfig' in storage) {
-        this.scheduleConfig = await (storage as any).loadScheduleConfig();
-        if (this.scheduleConfig) {
-          return;
-        }
+      // Load from reliable file-based storage
+      this.scheduleConfig = await loadFromFile();
+      if (this.scheduleConfig) {
+        return;
       }
       
       // Fallback to activity log loading
@@ -93,8 +90,8 @@ class Scheduler {
     const now = new Date();
     const nextRun = new Date(this.scheduleConfig.nextRun);
 
-    // Check if it's time to run (within 1 minute window)
-    if (now >= nextRun && now.getTime() - nextRun.getTime() < 60000) {
+    // Check if it's time to run (within 5 minute window for reliability)
+    if (now >= nextRun && now.getTime() - nextRun.getTime() < 300000) {
       console.log('⏰ Scheduled pipeline execution triggered');
       
       await storage.createActivityLog({
