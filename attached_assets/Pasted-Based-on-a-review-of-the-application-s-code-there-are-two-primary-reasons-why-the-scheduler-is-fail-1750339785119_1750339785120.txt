@@ -1,0 +1,16 @@
+Based on a review of the application's code, there are two primary reasons why the scheduler is failing to run at the time you set. The main issue is that the schedule configuration is not being saved permanently, and a secondary issue is that the logic for triggering the scheduled job is too restrictive.
+
+1. Schedule Configuration Is Not Saved to the Database
+The most critical issue is that your schedule settings are not being permanently saved. The application stores the schedule configuration as an "activity log" in memory.
+
+Problem: The AzureSQLStorage class, which is meant to handle database operations, uses a temporary in-memory array for activity logs instead of writing to the Azure SQL database.
+Effect: When you activate the schedule from the UI, the settings are stored in this temporary in-memory log. However, if the application restarts for any reason (like a new deployment or an idle timeout), this memory is wiped clean. When the scheduler service starts up again, it finds no saved configuration and therefore does not know when to run.
+2. The Job Execution Window Is Too Strict
+There is a secondary logic issue in how the scheduler checks if it's time to run the job.
+
+Problem: The code checks if the current time is within a very narrow, 60-second window after the scheduled time. The scheduler's check itself only runs once every minute.
+Effect: If there is any minor server lag or if the interval check doesn't align perfectly, it can easily miss this 60-second window. For example, if the check runs a few seconds before the scheduled time, the next check won't happen until one minute later, which will be outside the execution window, causing the schedule for that day to be skipped.
+Other Findings
+Misleading Code Comment: A comment in the code incorrectly describes how timezone conversions are calculated. The comment states that it subtracts hours to convert from Eastern Time to UTC, but the code correctly adds them. While this did not cause the current issue, it could lead to future confusion.
+Hardcoded Fallback: The code contains a hardcoded "reliable" path for a 09:30 AM schedule time, which you are not using. By setting the time to 09:23 AM, your configuration bypasses this path and uses the more complex, less reliable logic.
+To resolve this, the application's storage logic needs to be updated to save and load the schedule configuration from the Azure SQL database instead of relying on in-memory logs. Additionally, the time-checking logic should be made more flexible to prevent missing the execution window.

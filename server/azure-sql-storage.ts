@@ -329,7 +329,9 @@ export class AzureSQLStorage implements IStorage {
     const newLog: ActivityLog = {
       id: this.currentLogId++,
       timestamp: new Date(),
-      ...log,
+      message: log.message,
+      level: log.level,
+      executionId: log.executionId || null,
     };
     this.activityLogs.push(newLog);
     return newLog;
@@ -343,5 +345,87 @@ export class AzureSQLStorage implements IStorage {
 
   async clearActivityLogs(): Promise<void> {
     this.activityLogs = [];
+  }
+
+  // Schedule configuration methods
+  private scheduleConfig: any = null;
+
+  async saveScheduleConfig(config: any): Promise<void> {
+    await this.ensureTableExists();
+    const pool = await this.getPool();
+    const request = pool.request();
+
+    try {
+      // Create schedule_config table if it doesn't exist and insert/update config
+      await request.query(`
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='schedule_config' and xtype='U')
+        CREATE TABLE schedule_config (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          enabled BIT NOT NULL,
+          time NVARCHAR(10) NOT NULL,
+          timezone NVARCHAR(50) NOT NULL,
+          nextRun DATETIME2 NOT NULL,
+          activated DATETIME2 NOT NULL,
+          created_at DATETIME2 DEFAULT GETDATE()
+        );
+        
+        DELETE FROM schedule_config;
+      `);
+
+      // Insert the new schedule config
+      const newRequest = pool.request();
+      newRequest.input('enabled', sql.Bit, config.enabled);
+      newRequest.input('time', sql.NVarChar, config.time);
+      newRequest.input('timezone', sql.NVarChar, config.timezone);
+      newRequest.input('nextRun', sql.DateTime2, new Date(config.nextRun));
+      newRequest.input('activated', sql.DateTime2, new Date(config.activated));
+      
+      await newRequest.query(`
+        INSERT INTO schedule_config (enabled, time, timezone, nextRun, activated)
+        VALUES (@enabled, @time, @timezone, @nextRun, @activated)
+      `);
+      
+      this.scheduleConfig = config;
+      console.log('💾 Schedule configuration saved to database:', config);
+    } catch (error) {
+      console.error('❌ Failed to save schedule config to database:', error);
+      // Fallback to memory storage
+      this.scheduleConfig = config;
+    }
+  }
+
+  async loadScheduleConfig(): Promise<any> {
+    await this.ensureTableExists();
+    const pool = await this.getPool();
+    const request = pool.request();
+
+    try {
+      const result = await request.query(`
+        IF EXISTS (SELECT * FROM sysobjects WHERE name='schedule_config' and xtype='U')
+        SELECT TOP 1 * FROM schedule_config ORDER BY created_at DESC
+      `);
+
+      if (result.recordset && result.recordset.length > 0) {
+        const row = result.recordset[0];
+        this.scheduleConfig = {
+          enabled: row.enabled,
+          time: row.time,
+          timezone: row.timezone,
+          nextRun: row.nextRun.toISOString(),
+          activated: row.activated.toISOString()
+        };
+        console.log('📋 Loaded schedule configuration from database:', this.scheduleConfig);
+        return this.scheduleConfig;
+      }
+    } catch (error) {
+      console.error('❌ Failed to load schedule config from database:', error);
+    }
+
+    console.log('📋 No existing schedule configuration found in database');
+    return null;
+  }
+
+  getScheduleConfig(): any {
+    return this.scheduleConfig;
   }
 }

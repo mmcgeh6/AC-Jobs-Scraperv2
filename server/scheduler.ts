@@ -38,25 +38,41 @@ class Scheduler {
   async saveScheduleConfig(config: ScheduleConfig) {
     this.scheduleConfig = config;
     
-    // Store in activity logs as a simple persistence mechanism
-    await storage.createActivityLog({
-      message: `SCHEDULE_CONFIG:${JSON.stringify(config)}`,
-      level: 'info'
-    });
-    
-    console.log('💾 Schedule configuration saved:', config);
+    // Use the database storage method
+    try {
+      if ('saveScheduleConfig' in storage) {
+        await (storage as any).saveScheduleConfig(config);
+      } else {
+        // Fallback to activity log storage
+        await storage.createActivityLog({
+          message: `SCHEDULE_CONFIG:${JSON.stringify(config)}`,
+          level: 'info'
+        });
+        console.log('💾 Schedule configuration saved to activity logs:', config);
+      }
+    } catch (error) {
+      console.error('Failed to save schedule config:', error);
+    }
   }
 
   async loadScheduleConfig() {
     try {
-      // Load from activity logs
+      // Try the database loading method first
+      if ('loadScheduleConfig' in storage) {
+        this.scheduleConfig = await (storage as any).loadScheduleConfig();
+        if (this.scheduleConfig) {
+          return;
+        }
+      }
+      
+      // Fallback to activity log loading
       const logs = await storage.getRecentActivityLogs(100);
       const scheduleLog = logs.find(log => log.message.startsWith('SCHEDULE_CONFIG:'));
       
       if (scheduleLog) {
         const configJson = scheduleLog.message.replace('SCHEDULE_CONFIG:', '');
         this.scheduleConfig = JSON.parse(configJson);
-        console.log('📋 Loaded schedule configuration:', this.scheduleConfig);
+        console.log('📋 Loaded schedule configuration from activity logs:', this.scheduleConfig);
       } else {
         console.log('📋 No existing schedule configuration found');
       }

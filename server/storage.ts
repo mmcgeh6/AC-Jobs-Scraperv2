@@ -18,6 +18,11 @@ export interface IStorage {
   createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
   getRecentActivityLogs(limit?: number): Promise<ActivityLog[]>;
   clearActivityLogs(): Promise<void>;
+  
+  // Schedule configuration
+  saveScheduleConfig?(config: any): Promise<void>;
+  loadScheduleConfig?(): Promise<any>;
+  getScheduleConfig?(): any;
 }
 
 export class MemStorage implements IStorage {
