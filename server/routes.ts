@@ -324,6 +324,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Webhook endpoint for external pipeline triggering
+  app.post('/api/webhook/trigger-pipeline', async (req, res) => {
+    try {
+      console.log('🔗 Webhook received: Triggering pipeline execution with 1000 batch size');
+      
+      await storage.createActivityLog({
+        message: 'Pipeline triggered via webhook endpoint',
+        level: 'info'
+      });
+
+      // Start pipeline execution asynchronously with 1000 batch size
+      azurePipelineService.executePipeline(1000).catch(error => {
+        console.error('Webhook pipeline execution failed:', error);
+      });
+
+      res.json({ 
+        success: true,
+        message: 'Pipeline execution started via webhook',
+        batchSize: 1000,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error('Webhook pipeline trigger failed:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Failed to trigger pipeline via webhook', 
+        error: error.message 
+      });
+    }
+  });
+
   app.get('/api/system-status', async (req, res) => {
     try {
       // Check if environment variables are set
